@@ -11,12 +11,13 @@ import type { ComparisonResult } from "../engine/compare";
 import type { DocumentModel } from "../engine/model";
 
 const DB_NAME = "versionlens";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const STORE_DOCS = "documents";
 export const STORE_FILES = "files";
 export const STORE_COMPARISONS = "comparisons";
 export const STORE_SETTINGS = "settings";
+export const STORE_CHAINS = "chains";
 
 export interface StoredDocument {
   id: string;
@@ -45,6 +46,17 @@ export interface StoredComparison {
   review: Record<string, { status: ReviewStatus; reviewedAt: string; notes: ReviewerNote[] }>;
 }
 
+/** An ordered run of versions: v1 -> v2 -> v3, compared consecutively. */
+export interface StoredChain {
+  id: string;
+  name: string;
+  /** Oldest first. */
+  documentIds: string[];
+  /** One per consecutive pair, so length is documentIds.length - 1. */
+  comparisonIds: string[];
+  createdAt: string;
+}
+
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 export function openDb(): Promise<IDBDatabase> {
@@ -69,6 +81,10 @@ export function openDb(): Promise<IDBDatabase> {
         }
         if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
           db.createObjectStore(STORE_SETTINGS);
+        }
+        if (!db.objectStoreNames.contains(STORE_CHAINS)) {
+          const chains = db.createObjectStore(STORE_CHAINS, { keyPath: "id" });
+          chains.createIndex("createdAt", "createdAt");
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -219,6 +235,33 @@ export function applyReview(comparison: StoredComparison): Change[] {
   });
 }
 
+/* ------------------------------------------------------------------- chains */
+
+export async function putChain(chain: StoredChain): Promise<void> {
+  await write(STORE_CHAINS, ([store]) => {
+    store!.put(chain);
+  });
+}
+
+export async function getChain(id: string): Promise<StoredChain | undefined> {
+  const db = await openDb();
+  return request(db.transaction(STORE_CHAINS).objectStore(STORE_CHAINS).get(id));
+}
+
+export async function listChains(): Promise<StoredChain[]> {
+  const db = await openDb();
+  const all = await request<StoredChain[]>(
+    db.transaction(STORE_CHAINS).objectStore(STORE_CHAINS).getAll(),
+  );
+  return all.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function deleteChain(id: string): Promise<void> {
+  await write(STORE_CHAINS, ([store]) => {
+    store!.delete(id);
+  });
+}
+
 /* ----------------------------------------------------------------- settings */
 
 export async function getSetting<T>(key: string): Promise<T | undefined> {
@@ -264,11 +307,15 @@ export async function storageUsage(): Promise<StorageUsage> {
 
 /** Erase everything this browser holds. Irreversible, and entirely local. */
 export async function eraseAll(): Promise<void> {
-  await write([STORE_DOCS, STORE_FILES, STORE_COMPARISONS], ([docs, files, comparisons]) => {
-    docs!.clear();
-    files!.clear();
-    comparisons!.clear();
-  });
+  await write(
+    [STORE_DOCS, STORE_FILES, STORE_COMPARISONS, STORE_CHAINS],
+    ([docs, files, comparisons, chains]) => {
+      docs!.clear();
+      files!.clear();
+      comparisons!.clear();
+      chains!.clear();
+    },
+  );
 }
 
 export function newId(prefix: string): string {

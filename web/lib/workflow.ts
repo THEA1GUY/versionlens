@@ -12,6 +12,7 @@ import { extractFile, isSupported } from "./engine/extract";
 import type { DocumentModel, Side } from "./engine/model";
 import { SemanticAnalyzer } from "./engine/semantic";
 import {
+  type StoredChain,
   type StoredComparison,
   type StoredDocument,
   applyReview,
@@ -21,7 +22,10 @@ import {
   getOriginal,
   listComparisons,
   listDocuments,
+  getChain,
+  listChains,
   newId,
+  putChain,
   putComparison,
   putDocument,
   setReview,
@@ -148,6 +152,64 @@ function cloneModel(model: DocumentModel, side: Side): DocumentModel {
   return copy;
 }
 
+export interface ChainOptions {
+  name?: string;
+  onProgress?: (step: number, totalSteps: number, stage: Stage, message: string) => void;
+}
+
+/**
+ * Compare an ordered run of versions, consecutively.
+ *
+ * Each step is an ordinary comparison with its own citations, so nothing about the
+ * evidence is weaker than a two-version review. What the chain adds is the ability to
+ * read a value across the whole negotiation.
+ */
+export async function runChain(
+  documentIds: string[],
+  options: ChainOptions = {},
+): Promise<StoredChain> {
+  if (documentIds.length < 2) {
+    throw new IngestError("A version chain needs at least two documents.");
+  }
+  const docs = await Promise.all(documentIds.map((id) => getDocument(id)));
+  if (docs.some((d) => !d)) {
+    throw new IngestError("One of the documents is no longer stored locally.");
+  }
+
+  const totalSteps = documentIds.length - 1;
+  const comparisonIds: string[] = [];
+  for (let i = 0; i < totalSteps; i++) {
+    const comparison = await runComparison(documentIds[i]!, documentIds[i + 1]!, {
+      name: `${docs[i]!.filename} → ${docs[i + 1]!.filename}`,
+      onProgress: (stage, message) => options.onProgress?.(i + 1, totalSteps, stage, message),
+    });
+    comparisonIds.push(comparison.id);
+  }
+
+  const chain: StoredChain = {
+    id: newId("chn"),
+    name: options.name?.trim() || `${docs[0]!.filename} → ${docs[totalSteps]!.filename}`,
+    documentIds,
+    comparisonIds,
+    createdAt: new Date().toISOString(),
+  };
+  await putChain(chain);
+  return chain;
+}
+
+/** Load a chain with its steps resolved, oldest first. */
+export async function loadChain(
+  id: string,
+): Promise<{ chain: StoredChain; steps: StoredComparison[]; names: string[] } | null> {
+  const chain = await getChain(id);
+  if (!chain) return null;
+  const steps = (await Promise.all(chain.comparisonIds.map((c) => getComparison(c)))).filter(
+    (c): c is StoredComparison => Boolean(c),
+  );
+  const docs = await Promise.all(chain.documentIds.map((d) => getDocument(d)));
+  return { chain, steps, names: docs.map((d, i) => d?.filename ?? `Version ${i + 1}`) };
+}
+
 export async function reviewChange(
   comparisonId: string,
   changeId: string,
@@ -213,12 +275,15 @@ export async function originalUrl(documentId: string): Promise<string | null> {
 export {
   applyReview,
   deleteComparison,
+  getChain,
+  listChains,
   getComparison,
   getDocument,
   getOriginal,
   listComparisons,
   listDocuments,
   type ComparisonResult,
+  type StoredChain,
   type StoredComparison,
   type StoredDocument,
 };

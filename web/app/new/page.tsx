@@ -8,12 +8,10 @@ import type { LlmSettings } from "@/lib/engine/providers";
 import { providerById } from "@/lib/engine/providers";
 import type { StoredDocument } from "@/lib/store/db";
 import { loadLlmSettings } from "@/lib/store/settings";
-import { MAX_FILE_BYTES, ingestFile, runComparison } from "@/lib/workflow";
+import { MAX_FILE_BYTES, ingestFile, runChain, runComparison } from "@/lib/workflow";
 import { formatBytes } from "@/lib/format";
 import { ErrorNote, LocalBadge, Spinner, WarningNote } from "@/components/ui";
 import { ProcessingView } from "@/components/panels";
-
-type Slot = "a" | "b";
 
 interface SlotState {
   file: File | null;
@@ -24,9 +22,23 @@ interface SlotState {
 
 const EMPTY: SlotState = { file: null, stored: null, busy: false, error: null };
 
+/** Two versions is a comparison; three or more is a chain compared consecutively. */
+const MAX_VERSIONS = 8;
+
+function slotTitle(index: number, total: number): string {
+  if (total <= 2) return index === 0 ? "Version A" : "Version B";
+  return `Version ${index + 1}`;
+}
+
+function slotHint(index: number, total: number): string {
+  if (index === 0) return "The earliest version";
+  if (index === total - 1) return "The latest version";
+  return "Intermediate version";
+}
+
 export default function NewComparisonPage() {
   const router = useRouter();
-  const [slots, setSlots] = useState<Record<Slot, SlotState>>({ a: EMPTY, b: EMPTY });
+  const [slots, setSlots] = useState<SlotState[]>([EMPTY, EMPTY]);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [notes, setNotes] = useState("");
@@ -39,41 +51,58 @@ export default function NewComparisonPage() {
     loadLlmSettings().then(setLlm).catch(() => setLlm(null));
   }, []);
 
-  const ingest = useCallback(async (slot: Slot, file: File) => {
-    setSlots((prev) => ({ ...prev, [slot]: { file, stored: null, busy: true, error: null } }));
-    try {
-      const stored = await ingestFile(file, slot === "a" ? "A" : "B");
-      setSlots((prev) => ({ ...prev, [slot]: { file, stored, busy: false, error: null } }));
-      setName((current) => current || suggestName(file.name));
-    } catch (err) {
-      setSlots((prev) => ({
-        ...prev,
-        [slot]: {
+  const setSlot = useCallback((index: number, next: SlotState) => {
+    setSlots((prev) => prev.map((s, i) => (i === index ? next : s)));
+  }, []);
+
+  const ingest = useCallback(
+    async (index: number, file: File) => {
+      setSlot(index, { file, stored: null, busy: true, error: null });
+      try {
+        const stored = await ingestFile(file, index === 0 ? "A" : "B");
+        setSlot(index, { file, stored, busy: false, error: null });
+        setName((current) => current || suggestName(file.name));
+      } catch (err) {
+        setSlot(index, {
           file,
           stored: null,
           busy: false,
           error: err instanceof Error ? err.message : String(err),
-        },
-      }));
-    }
-  }, []);
+        });
+      }
+    },
+    [setSlot],
+  );
 
-  const ready = Boolean(slots.a.stored && slots.b.stored);
-  const sameFile =
-    slots.a.stored && slots.b.stored && slots.a.stored.sha256 === slots.b.stored.sha256;
+  const ready = slots.length >= 2 && slots.every((s) => s.stored);
+  const isChain = slots.length > 2;
+  // Consecutive duplicates make a step with nothing to report.
+  const duplicateAt = slots.findIndex(
+    (s, i) => i > 0 && s.stored !== null && slots[i - 1]?.stored?.sha256 === s.stored.sha256,
+  );
 
   async function submit(): Promise<void> {
-    if (!slots.a.stored || !slots.b.stored) return;
+    const ids = slots.map((s) => s.stored?.id).filter((id): id is string => Boolean(id));
+    if (ids.length !== slots.length || ids.length < 2) return;
     setRunning(true);
     setError(null);
     try {
-      const comparison = await runComparison(slots.a.stored.id, slots.b.stored.id, {
-        name,
-        documentCategory: category || null,
-        notes: notes.trim() || null,
-        onProgress: (s, message) => setStage({ stage: s, message }),
-      });
-      router.push(`/comparison?id=${comparison.id}`);
+      if (ids.length === 2) {
+        const comparison = await runComparison(ids[0] as string, ids[1] as string, {
+          name,
+          documentCategory: category || null,
+          notes: notes.trim() || null,
+          onProgress: (s, message) => setStage({ stage: s, message }),
+        });
+        router.push(`/comparison?id=${comparison.id}`);
+      } else {
+        const chain = await runChain(ids, {
+          name,
+          onProgress: (stepNo, totalSteps, s, message) =>
+            setStage({ stage: s, message: `Step ${stepNo} of ${totalSteps} — ${message}` }),
+        });
+        router.push(`/chain?id=${chain.id}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setRunning(false);
@@ -107,34 +136,50 @@ export default function NewComparisonPage() {
         <LocalBadge />
       </div>
       <p className="mt-2 max-w-prose text-[13.5px] text-ink-soft">
-        Both files are read in this browser, hashed, and stored on this device. Neither
-        file is uploaded or modified.
+        Files are read in this browser, hashed, and stored on this device. Nothing is
+        uploaded or modified. Add a third version or more to follow a value across a whole
+        negotiation.
       </p>
 
       <div className="mt-7 grid gap-4 sm:grid-cols-2">
-        <UploadSlot
-          slot="a"
-          title="Version A"
-          hint="The earlier version"
-          state={slots.a}
-          onPick={(file) => void ingest("a", file)}
-          onClear={() => setSlots((prev) => ({ ...prev, a: EMPTY }))}
-        />
-        <UploadSlot
-          slot="b"
-          title="Version B"
-          hint="The revised version"
-          state={slots.b}
-          onPick={(file) => void ingest("b", file)}
-          onClear={() => setSlots((prev) => ({ ...prev, b: EMPTY }))}
-        />
+        {slots.map((slot, index) => (
+          <UploadSlot
+            key={index}
+            slotId={`file-${index}`}
+            title={slotTitle(index, slots.length)}
+            hint={slotHint(index, slots.length)}
+            state={slot}
+            removable={slots.length > 2}
+            onPick={(file) => void ingest(index, file)}
+            onClear={() => setSlot(index, EMPTY)}
+            onRemove={() => setSlots((prev) => prev.filter((_, i) => i !== index))}
+          />
+        ))}
       </div>
 
-      {sameFile ? (
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        {slots.length < MAX_VERSIONS ? (
+          <button
+            type="button"
+            onClick={() => setSlots((prev) => [...prev, EMPTY])}
+            className="rounded-md border border-dashed border-rule px-3 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-accent hover:text-ink"
+          >
+            + Add another version
+          </button>
+        ) : null}
+        {isChain ? (
+          <span className="text-[11.5px] text-ink-faint">
+            {slots.length} versions — compared consecutively, {slots.length - 1} steps
+          </span>
+        ) : null}
+      </div>
+
+      {duplicateAt > 0 ? (
         <div className="mt-4">
           <WarningNote>
-            Both slots hold the same file — identical SHA-256. The comparison will report
-            no changes.
+            {slotTitle(duplicateAt - 1, slots.length)} and{" "}
+            {slotTitle(duplicateAt, slots.length)} are the same file — identical SHA-256.
+            That step will report no changes.
           </WarningNote>
         </div>
       ) : null}
@@ -215,10 +260,12 @@ export default function NewComparisonPage() {
           disabled={!ready}
           className="rounded-md bg-ink px-4 py-2 text-[13.5px] font-medium text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:bg-ink-faint"
         >
-          Compare documents
+          {isChain ? `Compare ${slots.length} versions` : "Compare documents"}
         </button>
         {!ready ? (
-          <span className="text-[12.5px] text-ink-faint">Add both versions to continue.</span>
+          <span className="text-[12.5px] text-ink-faint">
+            Add a file to every version to continue.
+          </span>
         ) : null}
       </div>
     </div>
@@ -231,19 +278,23 @@ function suggestName(filename: string): string {
 }
 
 function UploadSlot({
-  slot,
+  slotId,
   title,
   hint,
   state,
+  removable,
   onPick,
   onClear,
+  onRemove,
 }: {
-  slot: Slot;
+  slotId: string;
   title: string;
   hint: string;
   state: SlotState;
+  removable: boolean;
   onPick: (file: File) => void;
   onClear: () => void;
+  onRemove: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -267,14 +318,25 @@ function UploadSlot({
         handleFiles(e.dataTransfer.files);
       }}
     >
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-baseline justify-between gap-2">
         <h2 className="text-[13.5px] font-semibold">{title}</h2>
-        <span className="text-[11.5px] text-ink-faint">{hint}</span>
+        <span className="flex items-baseline gap-2">
+          <span className="text-[11.5px] text-ink-faint">{hint}</span>
+          {removable ? (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="text-[11.5px] text-ink-faint hover:text-remove hover:underline"
+            >
+              Remove
+            </button>
+          ) : null}
+        </span>
       </div>
 
       <input
         ref={inputRef}
-        id={`file-${slot}`}
+        id={slotId}
         type="file"
         accept=".pdf,.docx,.txt,.md"
         className="sr-only"
