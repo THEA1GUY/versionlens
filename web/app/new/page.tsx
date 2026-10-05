@@ -73,7 +73,7 @@ export default function NewComparisonPage() {
         notes: notes.trim() || null,
         onProgress: (s, message) => setStage({ stage: s, message }),
       });
-      router.push(`/comparisons/${comparison.id}`);
+      router.push(`/comparison?id=${comparison.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setRunning(false);

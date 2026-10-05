@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import type { Change, ReviewStatus } from "@/lib/engine/changes";
 import type { Citation, DocumentModel, Side } from "@/lib/engine/model";
 import type { StoredComparison } from "@/lib/store/db";
@@ -29,9 +29,27 @@ import { ExportMenu } from "@/components/ExportMenu";
 
 type Tab = "summary" | "changes" | "sections";
 
-export default function ComparisonPage() {
-  const params = useParams<{ id: string }>();
-  const id = params.id;
+/**
+ * The comparison id travels in the query string rather than the path. The app ships as
+ * static files, and ids are created in the browser, so there is no route to pre-render.
+ */
+export default function ComparisonRoute() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-[520px] px-4 py-20">
+          <Spinner label="Loading comparison…" />
+        </div>
+      }
+    >
+      <ComparisonPage />
+    </Suspense>
+  );
+}
+
+function ComparisonPage() {
+  const search = useSearchParams();
+  const id = search.get("id") ?? "";
 
   const [comparison, setComparison] = useState<StoredComparison | null>(null);
   const [models, setModels] = useState<{ a: DocumentModel | null; b: DocumentModel | null }>({
@@ -53,6 +71,10 @@ export default function ComparisonPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!id) {
+      setError("No comparison was specified.");
+      return;
+    }
     let active = true;
     void (async () => {
       try {

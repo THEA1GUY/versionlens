@@ -19,3 +19,6 @@ web/out/
 web/.env*.local
 .DS_Store
 Thumbs.db
+
+# Static export output
+web/out/

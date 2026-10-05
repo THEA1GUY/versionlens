@@ -19,8 +19,14 @@ Human-reviewed for final judgment.
 
 ## Current state
 
-- Engine, API and web workspace are complete and wired together.
-- 91 tests pass (`python -m pytest tests -q`).
+**The product is the TypeScript engine in `web/`, running in the browser.** The Python
+`engine/` and `api/` are the original implementation, kept as a cross-check and as the
+self-hosted path for work the browser cannot do (OCR, LibreOffice conversion). They are
+not what ships, so do not fix a bug there and assume users got it.
+
+- `web/` — 94 tests (`cd web && npm test`), typecheck, and a static build.
+- Evaluation runs against the shipped engine: `cd web && npx vitest run lib/eval`.
+- 91 Python tests still pass (`python -m pytest tests -q`) for the reference engine.
 - Evaluation on the demo pair: 100% recall / 100% precision-vs-labels / 100% citation
   accuracy across 17 labelled changes. **This is a controlled pair.** It proves the
   pipeline, not the product. Real labelled pairs under `eval/dataset/` are the next thing
@@ -36,9 +42,12 @@ Human-reviewed for final judgment.
 Run both, not just the tests:
 
 ```bash
-python -m pytest tests -q
-python -m eval.run_eval
+cd web && npm test          # unit tests + the evaluation gate
 ```
+
+The evaluation gate enforces the spec targets (95% recall, 90% precision, 98% citation
+accuracy, 95% severity-weighted recall, and exact reproduction of every stated numeric
+expectation). It prints a per-category table so a regression shows what moved.
 
 A change that keeps tests green but drops recall is a regression. The eval harness reports
 per-category breakdowns for exactly this reason.

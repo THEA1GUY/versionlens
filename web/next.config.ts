@@ -1,14 +1,21 @@
 import type { NextConfig } from "next";
 
-const apiBase = process.env.VERSIONLENS_API_URL ?? "http://127.0.0.1:8000";
-
+/**
+ * VersionLens ships as static files.
+ *
+ * There is no server component to the product: documents are read, compared and stored
+ * in the browser, and the only outbound request is the one the user enables to their own
+ * model provider. A static export makes that structural — there is no backend to send a
+ * document to, even by accident.
+ */
 const nextConfig: NextConfig = {
+  output: "export",
   reactStrictMode: true,
-  // The browser talks to /api/* on its own origin; Next forwards to the Python service.
-  // Keeps the API off the public internet in dev and avoids CORS entirely.
-  async rewrites() {
-    return [{ source: "/api/:path*", destination: `${apiBase}/api/:path*` }];
-  },
+  images: { unoptimized: true },
+  // Vercel and most static hosts serve /comparison as /comparison.html or /comparison/.
+  // Trailing slashes keep deep links working on hosts that do not rewrite extensionless
+  // paths.
+  trailingSlash: true,
 };
 
 export default nextConfig;

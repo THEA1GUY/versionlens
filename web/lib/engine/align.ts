@@ -24,6 +24,25 @@ export const SECTION_MATCH_THRESHOLD = 0.42;
 export const BLOCK_MATCH_THRESHOLD = 0.5;
 export const MOVE_MATCH_THRESHOLD = 0.85;
 
+/*
+ * Deliberately NOT implemented: pairing the last unmatched block on each side of a
+ * matched section.
+ *
+ * It looks attractive — section alignment already says these sections correspond, so a
+ * lone leftover on each side ought to be the same provision rewritten. It does fix
+ * clauses that swap their distinctive words wholesale ("governed by the laws of England
+ * and Wales" -> "...the Republic of Ireland"), which otherwise report as a removal plus
+ * an addition.
+ *
+ * But it also pairs a removed training clause with an added analytics clause, because
+ * those are also the last leftovers in their section. That is the worse error: two real
+ * changes collapse into one wrong one, and the removal is hidden. Reporting a rewritten
+ * clause as a removal plus an addition hides nothing — it is only less tidy.
+ *
+ * Failing toward two honest cards beats failing toward one confident wrong one. The
+ * ambiguous cases are what the semantic layer's alignment arbitration is for.
+ */
+
 /**
  * Block similarity blends character similarity with rare-word overlap.
  *

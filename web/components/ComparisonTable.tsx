@@ -35,7 +35,7 @@ export function ComparisonTable({ rows }: { rows: StoredComparison[] }) {
               <tr key={row.id} className="border-b border-rule-soft last:border-0 hover:bg-canvas">
                 <td className="px-4 py-3">
                   <Link
-                    href={`/comparisons/${row.id}`}
+                    href={`/comparison?id=${row.id}`}
                     className="font-medium text-ink hover:text-accent hover:underline"
                   >
                     {row.name}
