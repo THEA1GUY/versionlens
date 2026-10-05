@@ -1,0 +1,241 @@
+{
+  "pair": "demo-proposal",
+  "version_a": "proposal_v3.docx",
+  "version_b": "proposal_v4.docx",
+  "changes": [
+    {
+      "id": "TEST-001",
+      "category": "PRICING",
+      "importance": "HIGH",
+      "expect": {
+        "old": 5000000,
+        "new": 6000000,
+        "absolute": 1000000,
+        "percentage": 20.0
+      },
+      "match": [
+        "5,000,000",
+        "6,000,000"
+      ],
+      "note": "Total project price \u20a65,000,000 -> \u20a66,000,000"
+    },
+    {
+      "id": "TEST-002",
+      "category": "DURATION",
+      "importance": "HIGH",
+      "expect": {
+        "old": 45,
+        "new": 60,
+        "unit": "days"
+      },
+      "match": [
+        "45 days",
+        "60 days"
+      ],
+      "note": "Delivery period 45 -> 60 days"
+    },
+    {
+      "id": "TEST-003",
+      "category": "SCOPE",
+      "importance": "HIGH",
+      "expect": {
+        "removed": "on-site training"
+      },
+      "match": [
+        "on-site training"
+      ],
+      "note": "On-site training clause removed"
+    },
+    {
+      "id": "TEST-004",
+      "category": "DURATION",
+      "importance": "HIGH",
+      "expect": {
+        "old": 12,
+        "new": 6,
+        "unit": "months"
+      },
+      "match": [
+        "12 months",
+        "6 months"
+      ],
+      "note": "Support period 12 -> 6 months"
+    },
+    {
+      "id": "TEST-005",
+      "category": "PAYMENT_TERMS",
+      "importance": "HIGH",
+      "expect": {
+        "old": 50,
+        "new": 70,
+        "unit": "percent"
+      },
+      "match": [
+        "50%",
+        "70%"
+      ],
+      "note": "Upfront payment 50% -> 70%"
+    },
+    {
+      "id": "TEST-006",
+      "category": "TERMINATION",
+      "importance": "HIGH",
+      "expect": {
+        "old": 14,
+        "new": 30,
+        "unit": "days"
+      },
+      "match": [
+        "14 days",
+        "30 days"
+      ],
+      "note": "Termination notice 14 -> 30 days"
+    },
+    {
+      "id": "TEST-007",
+      "category": "PAYMENT_TERMS",
+      "importance": "HIGH",
+      "expect": {
+        "old": 30,
+        "new": 60,
+        "unit": "days"
+      },
+      "match": [
+        "within 30 days",
+        "within 60 days"
+      ],
+      "note": "Invoice payment period 30 -> 60 days"
+    },
+    {
+      "id": "TEST-008",
+      "category": "OBLIGATIONS",
+      "importance": "HIGH",
+      "expect": {
+        "modality_old": "shall",
+        "modality_new": "may"
+      },
+      "match": [
+        "security monitoring"
+      ],
+      "note": "Security monitoring: shall -> may when requested (meaning change)"
+    },
+    {
+      "id": "TEST-009",
+      "category": "SCOPE",
+      "importance": "MEDIUM",
+      "expect": {
+        "added": "monthly analytics reporting"
+      },
+      "match": [
+        "analytics reporting"
+      ],
+      "note": "Monthly analytics reporting added"
+    },
+    {
+      "id": "TEST-010",
+      "category": "RESPONSIBILITIES",
+      "importance": "MEDIUM",
+      "expect": {
+        "added": "weekly access reports"
+      },
+      "match": [
+        "weekly access reports"
+      ],
+      "note": "New Client obligation: weekly access reports"
+    },
+    {
+      "id": "TEST-011",
+      "category": "SCOPE",
+      "importance": "HIGH",
+      "expect": {
+        "removed_section": "Exclusivity"
+      },
+      "match": [
+        "Exclusivity",
+        "direct competitor"
+      ],
+      "note": "Exclusivity section removed"
+    },
+    {
+      "id": "TEST-012",
+      "category": "CONFIDENTIALITY",
+      "importance": "MEDIUM",
+      "expect": {
+        "added_section": "Data Protection"
+      },
+      "match": [
+        "Data Protection",
+        "personal data"
+      ],
+      "note": "Data Protection section added"
+    },
+    {
+      "id": "TEST-017",
+      "category": "DATES",
+      "importance": "LOW",
+      "expect": {
+        "old": "2026-08-12",
+        "new": "2026-09-02",
+        "days": 21
+      },
+      "match": [
+        "12 August 2026",
+        "2 September 2026"
+      ],
+      "note": "Cover page version date 12 August -> 2 September 2026"
+    },
+    {
+      "id": "TEST-013",
+      "category": "DATES",
+      "importance": "MEDIUM",
+      "expect": {
+        "old": "2026-10-05",
+        "new": "2026-10-12",
+        "days": 7
+      },
+      "match": [
+        "5 October 2026",
+        "12 October 2026"
+      ],
+      "note": "Commencement date moved 7 days later"
+    },
+    {
+      "id": "TEST-014",
+      "category": "PRICING",
+      "importance": "MEDIUM",
+      "expect": {
+        "old": 10000,
+        "new": 12500
+      },
+      "match": [
+        "10,000",
+        "12,500"
+      ],
+      "note": "Rate card: Consulting $10,000 -> $12,500"
+    },
+    {
+      "id": "TEST-015",
+      "category": "PRICING",
+      "importance": "MEDIUM",
+      "expect": {
+        "removed_row": "Training"
+      },
+      "match": [
+        "Training"
+      ],
+      "note": "Rate card: Training row removed"
+    },
+    {
+      "id": "TEST-016",
+      "category": "PRICING",
+      "importance": "MEDIUM",
+      "expect": {
+        "added_row": "Support"
+      },
+      "match": [
+        "Support"
+      ],
+      "note": "Rate card: Support row added"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+# Engine
+pdfplumber>=0.11
+python-docx>=1.1
+rapidfuzz>=3.9
+
+# API
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+pydantic>=2.8
+
+# Export
+reportlab>=4.2
+openpyxl>=3.1
+
+# Semantic layer (optional at runtime — any OpenAI-compatible endpoint)
+openai>=1.40
+
+# Dev
+pytest>=8.0

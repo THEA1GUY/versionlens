@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+.env.local
+
+# Uploaded originals and derived comparison data — never commit customer documents.
+storage/
+*.db
+*.sqlite3
+eval/reports/
+*.out.json
+
+node_modules/
+web/.next/
+web/out/
+web/.env*.local
+.DS_Store
+Thumbs.db
