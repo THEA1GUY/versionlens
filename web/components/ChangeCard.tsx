@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { Change, Citation, ReviewStatus, Side } from "@/lib/types";
+import type { Change, ReviewStatus } from "@/lib/engine/changes";
+import { DETECTOR_LABEL } from "@/lib/engine/changes";
+import type { Citation, Side } from "@/lib/engine/model";
 import { citationLabel, formatDateTime, formatDelta, valuePair } from "@/lib/format";
 import {
   AttentionBadge,
@@ -12,30 +14,27 @@ import {
   TypeChip,
 } from "./ui";
 
-const REVIEW_ACTIONS: { status: ReviewStatus; label: string }[] = [
+const REVIEW_ACTIONS: Array<{ status: ReviewStatus; label: string }> = [
   { status: "confirmed", label: "Confirm" },
   { status: "false_alert", label: "False alert" },
   { status: "needs_discussion", label: "Needs discussion" },
 ];
 
-const DETECTOR_LABEL: Record<string, string> = {
-  text_diff: "Text difference",
-  structured_extraction: "Structured value comparison",
-  semantic_analysis: "Semantic analysis",
-  section_alignment: "Section alignment",
-};
-
 export function ChangeCard({
   change,
   selected,
+  approximatePageA,
+  approximatePageB,
   onSelect,
   onReview,
   onCitation,
 }: {
   change: Change;
   selected: boolean;
+  approximatePageA: boolean;
+  approximatePageB: boolean;
   onSelect: () => void;
-  onReview: (status: ReviewStatus, comment?: string) => Promise<void>;
+  onReview: (status: ReviewStatus, note?: string) => Promise<void>;
   onCitation: (side: Side, citation: Citation) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -46,14 +45,14 @@ export function ChangeCard({
   const pair = valuePair(change);
   const deltas = formatDelta(change);
 
-  async function act(status: ReviewStatus) {
+  async function act(status: ReviewStatus): Promise<void> {
     setSaving(status);
     setError(null);
     try {
       await onReview(status, noteDraft.trim() || undefined);
       setNoteDraft("");
     } catch (err) {
-      setError((err as Error).message);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(null);
     }
@@ -61,64 +60,91 @@ export function ChangeCard({
 
   return (
     <article
-      id={`change-${change.record_id}`}
+      id={`change-${change.id}`}
       onClick={onSelect}
       className={`card scroll-mt-4 cursor-pointer p-3.5 transition-shadow ${
         selected ? "border-accent shadow-[0_0_0_1px_var(--color-accent)]" : "hover:border-ink-faint"
-      } ${change.review_status === "false_alert" ? "opacity-60" : ""}`}
+      } ${change.reviewStatus === "false_alert" ? "opacity-60" : ""}`}
     >
       <div className="flex flex-wrap items-center gap-1.5">
         <AttentionBadge level={change.importance} />
         <CategoryChip value={change.category} />
         <TypeChip value={change.type} />
-        <ReviewStatusTag status={change.review_status} />
+        <ReviewStatusTag status={change.reviewStatus} />
         <span className="ml-auto font-mono text-[10px] text-ink-faint">{change.id}</span>
       </div>
 
       <h3 className="mt-2 text-[13.5px] font-medium leading-snug">{change.summary}</h3>
 
       {pair ? (
-        <p className="mt-1.5 font-mono text-[13px] font-semibold tabular-nums text-ink">{pair}</p>
+        <p className="mt-1.5 font-mono text-[13px] font-semibold tabular-nums">
+          {pair.before !== "—" ? <span className="text-ink-faint line-through">{pair.before}</span> : null}
+          {pair.before !== "—" && pair.after !== "—" ? (
+            <span className="mx-1.5 text-ink-faint" aria-hidden="true">
+              →
+            </span>
+          ) : null}
+          {pair.after !== "—" ? <span>{pair.after}</span> : null}
+        </p>
       ) : null}
 
       {deltas.length > 0 ? (
-        <p className="mt-0.5 text-[12px] text-ink-soft">{deltas.join(" · ")}</p>
+        <p className="mt-0.5 text-[12px] text-ink-soft tabular-nums">{deltas.join("  ·  ")}</p>
       ) : null}
 
       <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
         <SidePanel
           side="A"
-          citation={change.citation_a}
-          text={change.text_a}
-          ops={change.word_diff}
-          section={change.section_a}
+          citation={change.citationA}
+          text={change.textA}
+          ops={change.wordDiff}
+          section={change.sectionA}
+          approximatePage={approximatePageA}
           onCitation={onCitation}
         />
         <SidePanel
           side="B"
-          citation={change.citation_b}
-          text={change.text_b}
-          ops={change.word_diff}
-          section={change.section_b}
+          citation={change.citationB}
+          text={change.textB}
+          ops={change.wordDiff}
+          section={change.sectionB}
+          approximatePage={approximatePageB}
           onCitation={onCitation}
         />
       </div>
 
       {change.notes.length > 0 ? (
         <ul className="mt-2.5 space-y-1">
-          {change.notes.map((note) => (
-            <li key={note} className="text-[11.5px] leading-snug text-ink-soft">
-              {note}
-            </li>
-          ))}
+          {change.notes.map((note) => {
+            const semantic = note.startsWith("Semantic analysis: ");
+            return (
+              <li
+                key={note}
+                className={
+                  semantic
+                    ? "rounded bg-canvas px-2 py-1.5 text-[11.5px] leading-snug text-ink-soft"
+                    : "text-[11.5px] leading-snug text-ink-soft"
+                }
+              >
+                {semantic ? (
+                  <>
+                    <span className="font-medium text-ink">Semantic analysis.</span>{" "}
+                    {note.slice("Semantic analysis: ".length)}
+                  </>
+                ) : (
+                  note
+                )}
+              </li>
+            );
+          })}
         </ul>
       ) : null}
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-rule-soft pt-2.5">
         <ConfidenceTag
-          label={change.confidence_label}
+          label={change.confidenceLabel}
           score={change.confidence}
-          signals={change.confidence_signals}
+          signals={change.confidenceSignals}
         />
         <button
           type="button"
@@ -133,7 +159,7 @@ export function ChangeCard({
         </button>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           {REVIEW_ACTIONS.map((action) => {
-            const active = change.review_status === action.status;
+            const active = change.reviewStatus === action.status;
             return (
               <button
                 key={action.status}
@@ -168,27 +194,25 @@ export function ChangeCard({
               {change.detectors.map((d) => DETECTOR_LABEL[d] ?? d).join(", ")}
             </Detail>
             <Detail label="Confidence">
-              {change.confidence_label} ({Math.round(change.confidence * 100)}%)
+              {change.confidenceLabel} ({Math.round(change.confidence * 100)}%)
             </Detail>
             {change.direction ? (
               <Detail label="Direction">{change.direction.replace(/_/g, " ")}</Detail>
             ) : null}
-            <Detail label="Review priority score">{change.importance_score}</Detail>
+            <Detail label="Review priority score">{change.importanceScore}</Detail>
             {change.categories.length > 1 ? (
               <Detail label="All categories">{change.categories.join(", ")}</Detail>
             ) : null}
-            {change.reviewed_by ? (
-              <Detail label="Reviewed by">
-                {change.reviewed_by} · {formatDateTime(change.reviewed_at)}
-              </Detail>
+            {change.reviewedAt ? (
+              <Detail label="Reviewed">{formatDateTime(change.reviewedAt)}</Detail>
             ) : null}
           </dl>
 
-          {Object.keys(change.confidence_signals).length > 0 ? (
+          {Object.keys(change.confidenceSignals).length > 0 ? (
             <div>
               <div className="label-caps mb-1">Confidence signals</div>
               <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-ink-soft">
-                {Object.entries(change.confidence_signals).map(([key, value]) => (
+                {Object.entries(change.confidenceSignals).map(([key, value]) => (
                   <li key={key}>
                     {key} <span className="tabular-nums">{Math.round(value * 100)}%</span>
                   </li>
@@ -197,14 +221,14 @@ export function ChangeCard({
             </div>
           ) : null}
 
-          {change.reviewer_notes.length > 0 ? (
+          {change.reviewerNotes.length > 0 ? (
             <div>
               <div className="label-caps mb-1">Reviewer notes</div>
               <ul className="space-y-1.5">
-                {change.reviewer_notes.map((note, i) => (
+                {change.reviewerNotes.map((note, i) => (
                   <li key={i} className="rounded bg-canvas px-2 py-1.5 text-[12px]">
                     <div className="text-[10.5px] text-ink-faint">
-                      {note.author ?? "Reviewer"} · {formatDateTime(note.created_at)}
+                      {note.author || "Reviewer"} · {formatDateTime(note.createdAt)}
                     </div>
                     {note.body}
                   </li>
@@ -244,13 +268,15 @@ function SidePanel({
   text,
   ops,
   section,
+  approximatePage,
   onCitation,
 }: {
   side: Side;
   citation: Citation | null;
   text: string;
-  ops: Change["word_diff"];
+  ops: Change["wordDiff"];
   section: string | null;
+  approximatePage: boolean;
   onCitation: (side: Side, citation: Citation) => void;
 }) {
   const hasContent = Boolean(citation || text);
@@ -267,7 +293,7 @@ function SidePanel({
           className="mb-1.5 block text-left text-[11.5px] text-accent hover:underline"
           title="Open this passage in the document pane"
         >
-          {citationLabel(citation.section ?? section, citation.page)}
+          {citationLabel(citation.section ?? section, citation.page, approximatePage)}
         </button>
       ) : (
         <div className="mb-1.5 text-[11.5px] text-ink-faint">No corresponding content</div>

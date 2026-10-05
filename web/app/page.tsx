@@ -2,24 +2,20 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
-import type { ComparisonListItem, Health } from "@/lib/types";
-import { Disclaimer, EmptyState, Spinner } from "@/components/ui";
+import { DISCLAIMER } from "@/lib/engine/compare";
+import type { StoredComparison } from "@/lib/store/db";
+import { listComparisons } from "@/lib/workflow";
 import { ComparisonTable } from "@/components/ComparisonTable";
+import { Disclaimer, EmptyState, ErrorNote, LocalBadge, Spinner } from "@/components/ui";
 
 export default function DashboardPage() {
-  const [comparisons, setComparisons] = useState<ComparisonListItem[] | null>(null);
-  const [health, setHealth] = useState<Health | null>(null);
+  const [rows, setRows] = useState<StoredComparison[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    Promise.all([api.listComparisons(), api.health()])
-      .then(([list, info]) => {
-        if (!active) return;
-        setComparisons(list);
-        setHealth(info);
-      })
+    listComparisons()
+      .then((list) => active && setRows(list))
       .catch((err: Error) => active && setError(err.message));
     return () => {
       active = false;
@@ -37,6 +33,10 @@ export default function DashboardPage() {
           changes to pricing, scope, deadlines, responsibilities and key terms, with
           references back to both original documents.
         </p>
+        <p className="mt-2 max-w-2xl text-[13px] text-ink-soft">
+          Your documents are read and compared inside this browser and saved on this device
+          only. Nothing is uploaded.
+        </p>
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <Link
             href="/new"
@@ -44,21 +44,14 @@ export default function DashboardPage() {
           >
             Compare two documents
           </Link>
-          {health ? (
-            <span className="text-[12px] text-ink-faint">
-              Engine {health.engine_version} ·{" "}
-              {health.semantic_available
-                ? `semantic analysis on (${health.semantic_model})`
-                : "deterministic analysis only"}
-            </span>
-          ) : null}
+          <LocalBadge />
         </div>
       </section>
 
       <section>
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="label-caps">Recent comparisons</h2>
-          {comparisons && comparisons.length > 0 ? (
+          {rows && rows.length > 0 ? (
             <Link href="/comparisons" className="text-[12.5px] text-accent hover:underline">
               View all
             </Link>
@@ -66,14 +59,12 @@ export default function DashboardPage() {
         </div>
 
         {error ? (
-          <div className="card p-4 text-[13px] text-remove">
-            Could not reach the comparison service: {error}
-          </div>
-        ) : !comparisons ? (
+          <ErrorNote>Could not open local storage: {error}</ErrorNote>
+        ) : !rows ? (
           <div className="card p-6">
             <Spinner label="Loading comparisons…" />
           </div>
-        ) : comparisons.length === 0 ? (
+        ) : rows.length === 0 ? (
           <EmptyState
             title="No comparisons yet"
             body="Upload two versions of a proposal, contract or statement of work to see a traceable change review."
@@ -87,15 +78,13 @@ export default function DashboardPage() {
             }
           />
         ) : (
-          <ComparisonTable rows={comparisons.slice(0, 10)} />
+          <ComparisonTable rows={rows.slice(0, 10)} />
         )}
       </section>
 
-      {health ? (
-        <footer className="mt-10 border-t border-rule pt-4">
-          <Disclaimer text={health.disclaimer} />
-        </footer>
-      ) : null}
+      <footer className="mt-10 border-t border-rule pt-4">
+        <Disclaimer text={DISCLAIMER} />
+      </footer>
     </div>
   );
 }

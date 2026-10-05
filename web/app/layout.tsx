@@ -5,13 +5,14 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "VersionLens — see exactly what changed",
   description:
-    "Compare proposals, agreements and contracts side by side, with references back to both original documents.",
+    "Compare proposals, agreements and contracts side by side, with references back to both original documents. Runs entirely in your browser.",
 };
 
 const NAV = [
   { href: "/", label: "Dashboard" },
   { href: "/comparisons", label: "Comparisons" },
   { href: "/documents", label: "Documents" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

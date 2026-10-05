@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
-import type { DiffOp, Importance, ReviewStatus } from "@/lib/types";
-import { IMPORTANCE_LABEL, REVIEW_LABEL, TYPE_LABEL, TYPE_MARK, categoryLabel } from "@/lib/format";
+import type { Change, DiffOp, Importance, ReviewStatus } from "@/lib/engine/changes";
+import {
+  CATEGORY_LABEL,
+  IMPORTANCE_LABEL,
+  REVIEW_LABEL,
+  TYPE_LABEL,
+  TYPE_MARK,
+} from "@/lib/engine/changes";
 
 /** Attention level. Carries a word, not just a colour. */
 export function AttentionBadge({ level }: { level: Importance }) {
@@ -14,7 +20,7 @@ export function AttentionBadge({ level }: { level: Importance }) {
     <span
       className={`inline-flex items-center gap-1 rounded border px-1.5 py-[2px] text-[10.5px] font-semibold uppercase tracking-[0.06em] ${tone}`}
     >
-      {level === "HIGH" ? "▲" : level === "MEDIUM" ? "●" : "○"}
+      <span aria-hidden="true">{level === "HIGH" ? "▲" : level === "MEDIUM" ? "●" : "○"}</span>
       {IMPORTANCE_LABEL[level]}
     </span>
   );
@@ -23,12 +29,12 @@ export function AttentionBadge({ level }: { level: Importance }) {
 export function CategoryChip({ value }: { value: string }) {
   return (
     <span className="rounded border border-rule bg-canvas px-1.5 py-[2px] text-[10.5px] font-medium uppercase tracking-[0.05em] text-ink-soft">
-      {categoryLabel(value)}
+      {CATEGORY_LABEL[value as keyof typeof CATEGORY_LABEL] ?? value}
     </span>
   );
 }
 
-export function TypeChip({ value }: { value: string }) {
+export function TypeChip({ value }: { value: Change["type"] }) {
   const tone =
     value === "ADDED" || value === "SECTION_ADDED"
       ? "border-add/30 bg-add-soft text-add"
@@ -42,9 +48,9 @@ export function TypeChip({ value }: { value: string }) {
       className={`inline-flex items-center gap-1 rounded border px-1.5 py-[2px] text-[10.5px] font-medium uppercase tracking-[0.05em] ${tone}`}
     >
       <span aria-hidden="true" className="font-mono">
-        {TYPE_MARK[value] ?? "±"}
+        {TYPE_MARK[value]}
       </span>
-      {TYPE_LABEL[value] ?? value}
+      {TYPE_LABEL[value]}
     </span>
   );
 }
@@ -60,13 +66,13 @@ export function ConfidenceTag({
 }) {
   const detail = signals
     ? Object.entries(signals)
-        .map(([key, value]) => `${key} ${(value * 100).toFixed(0)}%`)
+        .map(([key, value]) => `${key} ${Math.round(value * 100)}%`)
         .join(", ")
     : undefined;
   return (
     <span
       className="text-[11.5px] text-ink-faint"
-      title={detail ? `${(score * 100).toFixed(0)}% — ${detail}` : `${(score * 100).toFixed(0)}%`}
+      title={detail ? `${Math.round(score * 100)}% — ${detail}` : `${Math.round(score * 100)}%`}
     >
       {label}
     </span>
@@ -90,25 +96,24 @@ export function ReviewStatusTag({ status }: { status: ReviewStatus }) {
 
 /**
  * Word-level diff. Only the changed tokens are marked, so "the service fee is $20,000"
- * shows a highlight on the amount rather than the whole sentence (PRD §14).
+ * highlights the amount rather than the whole sentence.
  */
 export function DiffText({ ops, side }: { ops: DiffOp[]; side: "a" | "b" }) {
-  if (!ops.length) return null;
+  if (ops.length === 0) return null;
   return (
     <span>
       {ops.map((op, index) => {
         const text = side === "a" ? op.a : op.b;
         if (!text) return null;
         if (op.op === "equal") return <span key={index}>{text}</span>;
-        const isRemoval = side === "a";
         if (op.op === "insert" && side === "a") return null;
         if (op.op === "delete" && side === "b") return null;
         return (
           <mark
             key={index}
             className={
-              isRemoval
-                ? "bg-remove-soft text-remove decoration-remove/40 [text-decoration-line:line-through]"
+              side === "a"
+                ? "bg-remove-soft text-remove [text-decoration-line:line-through]"
                 : "bg-add-soft text-add"
             }
           >
@@ -152,7 +157,18 @@ export function WarningNote({ children }: { children: ReactNode }) {
       <span aria-hidden="true" className="font-semibold">
         !
       </span>
-      <div>{children}</div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+export function ErrorNote({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex gap-2 rounded-md border border-remove/30 bg-remove-soft px-3 py-2 text-[12.5px] text-remove">
+      <span aria-hidden="true" className="font-semibold">
+        ×
+      </span>
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }
@@ -185,5 +201,16 @@ export function ProgressBar({ value, total }: { value: number; total: number }) 
       </div>
       <span className="tabular-nums text-[11.5px] text-ink-faint">{pct}%</span>
     </div>
+  );
+}
+
+export function LocalBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded border border-add/30 bg-add-soft px-1.5 py-[2px] text-[10.5px] font-medium text-add"
+      title="Documents are processed in this browser and stored on this device only."
+    >
+      <span aria-hidden="true">●</span> On this device
+    </span>
   );
 }

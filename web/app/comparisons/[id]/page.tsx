@@ -1,18 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
-import type {
-  Change,
-  Citation,
-  Comparison,
-  DocumentContent,
-  Facets,
-  ReviewStatus,
-  Side,
-} from "@/lib/types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Change, ReviewStatus } from "@/lib/engine/changes";
+import type { Citation, DocumentModel, Side } from "@/lib/engine/model";
+import type { StoredComparison } from "@/lib/store/db";
+import { loadPreferences } from "@/lib/store/settings";
+import {
+  applyReview,
+  getComparison,
+  getDocument,
+  getOriginal,
+  reviewChange,
+} from "@/lib/workflow";
 import { ChangeCard } from "@/components/ChangeCard";
 import { DocumentPane } from "@/components/DocumentPane";
 import {
@@ -23,21 +24,24 @@ import {
   SectionMapPanel,
   SummaryPanel,
 } from "@/components/panels";
-import { Disclaimer, EmptyState, Spinner } from "@/components/ui";
+import { Disclaimer, EmptyState, LocalBadge, Spinner } from "@/components/ui";
+import { ExportMenu } from "@/components/ExportMenu";
 
 type Tab = "summary" | "changes" | "sections";
-
-const TERMINAL = new Set(["COMPLETED", "PARTIAL", "FAILED"]);
 
 export default function ComparisonPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
 
-  const [comparison, setComparison] = useState<Comparison | null>(null);
-  const [changes, setChanges] = useState<Change[] | null>(null);
-  const [facets, setFacets] = useState<Facets | null>(null);
-  const [contentA, setContentA] = useState<DocumentContent | null>(null);
-  const [contentB, setContentB] = useState<DocumentContent | null>(null);
+  const [comparison, setComparison] = useState<StoredComparison | null>(null);
+  const [models, setModels] = useState<{ a: DocumentModel | null; b: DocumentModel | null }>({
+    a: null,
+    b: null,
+  });
+  const [originals, setOriginals] = useState<{ a: Blob | null; b: Blob | null }>({
+    a: null,
+    b: null,
+  });
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [tab, setTab] = useState<Tab>("summary");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -45,126 +49,116 @@ export default function ComparisonPage() {
     a: null,
     b: null,
   });
-  const [error, setError] = useState<string | null>(null);
   const [docsOpen, setDocsOpen] = useState(true);
-  const listRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Poll while the comparison is still running, then stop.
   useEffect(() => {
     let active = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function poll() {
+    void (async () => {
       try {
-        const next = await api.getComparison(id);
+        const [record, prefs] = await Promise.all([getComparison(id), loadPreferences()]);
         if (!active) return;
-        setComparison(next);
-        if (!TERMINAL.has(next.status)) {
-          timer = setTimeout(poll, 900);
+        if (!record) {
+          setError("This comparison is not stored in this browser.");
+          return;
         }
+        setComparison(record);
+        setFilters((f) => ({ ...f, includeMinor: prefs.showMinorByDefault }));
+
+        const [docA, docB] = await Promise.all(
+          record.documentIds.map((docId) => getDocument(docId)),
+        );
+        if (!active) return;
+        setModels({ a: docA?.model ?? null, b: docB?.model ?? null });
+
+        const [blobA, blobB] = await Promise.all(
+          record.documentIds.map((docId) => getOriginal(docId)),
+        );
+        if (!active) return;
+        setOriginals({ a: blobA ?? null, b: blobB ?? null });
       } catch (err) {
-        if (active) setError((err as Error).message);
+        if (active) setError(err instanceof Error ? err.message : String(err));
       }
-    }
-    void poll();
+    })();
     return () => {
       active = false;
-      if (timer) clearTimeout(timer);
     };
   }, [id]);
 
-  const ready = comparison && (comparison.status === "COMPLETED" || comparison.status === "PARTIAL");
-
-  // Document text powers the side-by-side panes and citation jumps.
-  useEffect(() => {
-    if (!ready || !comparison) return;
-    let active = true;
-    void api
-      .getDocumentContent(comparison.version_a_document_id)
-      .then((c) => active && setContentA(c))
-      .catch(() => {});
-    void api
-      .getDocumentContent(comparison.version_b_document_id)
-      .then((c) => active && setContentB(c))
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [ready, comparison]);
-
-  const loadChanges = useCallback(
-    async (state: FilterState) => {
-      const response = await api.getChanges(id, {
-        category: state.categories,
-        importance: state.importance,
-        change_type: state.types,
-        review_status: state.reviewStatuses,
-        include_minor: state.includeMinor,
-        q: state.query || undefined,
-      });
-      setChanges(response.changes);
-      setFacets(response.facets);
-    },
-    [id],
+  const allChanges = useMemo(
+    () => (comparison ? applyReview(comparison) : []),
+    [comparison],
   );
 
-  useEffect(() => {
-    if (!ready) return;
-    const handle = setTimeout(() => {
-      void loadChanges(filters).catch((err: Error) => setError(err.message));
-    }, filters.query ? 220 : 0);
-    return () => clearTimeout(handle);
-  }, [ready, filters, loadChanges]);
+  const facets = useMemo(() => {
+    const category: Record<string, number> = {};
+    const importance: Record<string, number> = {};
+    const type: Record<string, number> = {};
+    for (const c of allChanges) {
+      for (const cat of c.categories) category[cat] = (category[cat] ?? 0) + 1;
+      importance[c.importance] = (importance[c.importance] ?? 0) + 1;
+      type[c.type] = (type[c.type] ?? 0) + 1;
+    }
+    return { category, importance, type };
+  }, [allChanges]);
 
-  const selected = useMemo(
-    () => changes?.find((c) => c.record_id === selectedId) ?? null,
-    [changes, selectedId],
-  );
+  const visible = useMemo(() => {
+    const needle = filters.query.trim().toLowerCase();
+    return allChanges.filter((c) => {
+      if (!filters.includeMinor && c.importance === "LOW") return false;
+      if (filters.importance.length > 0 && !filters.importance.includes(c.importance)) return false;
+      if (filters.types.length > 0 && !filters.types.includes(c.type)) return false;
+      if (
+        filters.categories.length > 0 &&
+        !c.categories.some((cat) => filters.categories.includes(cat))
+      ) {
+        return false;
+      }
+      if (needle) {
+        const haystack = [
+          c.summary, c.textA, c.textB, c.sectionA ?? "", c.sectionB ?? "",
+          String(c.oldValue?.sourceText ?? ""), String(c.newValue?.sourceText ?? ""),
+        ].join(" ").toLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
+      return true;
+    });
+  }, [allChanges, filters]);
 
   const selectChange = useCallback((change: Change) => {
-    setSelectedId(change.record_id);
-    setFocus({ a: change.citation_a, b: change.citation_b });
+    setSelectedId(change.id);
+    setFocus({ a: change.citationA, b: change.citationB });
   }, []);
 
   const jumpToChange = useCallback(
-    async (changeKey: string) => {
+    (changeId: string) => {
       setTab("changes");
-      // The key change may be filtered out of the current view; widen first.
-      let list = changes;
-      if (!list?.some((c) => c.id === changeKey)) {
-        setFilters(EMPTY_FILTERS);
-        const response = await api.getChanges(id, { include_minor: true });
-        setChanges(response.changes);
-        setFacets(response.facets);
-        list = response.changes;
-      }
-      const target = list?.find((c) => c.id === changeKey);
+      const target = allChanges.find((c) => c.id === changeId);
       if (!target) return;
+      if (target.importance === "LOW" && !filters.includeMinor) {
+        setFilters((f) => ({ ...f, includeMinor: true }));
+      }
       selectChange(target);
       requestAnimationFrame(() => {
         document
-          .getElementById(`change-${target.record_id}`)
+          .getElementById(`change-${changeId}`)
           ?.scrollIntoView({ block: "center", behavior: "smooth" });
       });
     },
-    [changes, id, selectChange],
+    [allChanges, filters.includeMinor, selectChange],
   );
 
-  async function review(change: Change, status: ReviewStatus, comment?: string) {
-    const updated = await api.reviewChange(change.record_id, status, comment);
-    setChanges((prev) =>
-      prev ? prev.map((c) => (c.record_id === updated.record_id ? updated : c)) : prev,
-    );
-    // Review counts live on the comparison summary.
-    void api.getComparison(id).then(setComparison).catch(() => {});
+  async function review(change: Change, status: ReviewStatus, note?: string): Promise<void> {
+    const updated = await reviewChange(id, change.id, status, note);
+    if (updated) setComparison({ ...updated });
   }
 
-  function onCitation(side: Side, citation: Citation) {
+  function onCitation(side: Side, citation: Citation): void {
     setDocsOpen(true);
     setFocus((prev) => ({ ...prev, [side === "A" ? "a" : "b"]: citation }));
   }
 
-  if (error && !comparison) {
+  if (error) {
     return (
       <div className="mx-auto max-w-[620px] px-4 py-16">
         <EmptyState
@@ -188,20 +182,20 @@ export default function ComparisonPage() {
     );
   }
 
-  if (!ready) {
+  const result = comparison.result;
+  if (!result || comparison.status === "FAILED") {
     return (
       <ProcessingView
         status={comparison.status}
-        message={comparison.stage_message}
-        error={comparison.error}
+        message={comparison.stageMessage}
+        error={result?.error ?? comparison.stageMessage}
       />
     );
   }
 
-  const docA = comparison.documents.a;
-  const docB = comparison.documents.b;
-  const summary = comparison.summary;
-  const noMaterialChanges = summary.total_changes > 0 && summary.material_changes === 0;
+  const summary = result.summary;
+  const docA = result.documents.a;
+  const docB = result.documents.b;
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
@@ -216,35 +210,39 @@ export default function ComparisonPage() {
               <span>Comparison</span>
             </nav>
             <h1 className="serif-title mt-0.5 truncate text-[19px] font-semibold">
-              {comparison.name || "Untitled comparison"}
+              {comparison.name}
             </h1>
             <p className="mt-0.5 text-[12px] text-ink-soft">
-              <span className="font-medium">{docA?.filename}</span>
+              <span className="font-medium">{docA.filename}</span>
               <span className="text-ink-faint"> versus </span>
-              <span className="font-medium">{docB?.filename}</span>
+              <span className="font-medium">{docB.filename}</span>
             </p>
           </div>
 
           <div className="flex items-center gap-4">
             <div className="text-right">
               <div className="text-[19px] font-semibold leading-tight tabular-nums">
-                {summary.total_changes}
+                {summary.totalChanges}
               </div>
               <div className="label-caps">detected changes</div>
             </div>
             <div className="hidden text-[11.5px] leading-snug text-ink-soft sm:block">
               <div>
-                <span className="font-semibold text-remove">{summary.high_attention}</span> high
+                <span className="font-semibold text-remove">{summary.highAttention}</span> high
               </div>
               <div>
-                <span className="font-semibold text-attention">{summary.medium_attention}</span>{" "}
+                <span className="font-semibold text-attention">{summary.mediumAttention}</span>{" "}
                 medium
               </div>
               <div>
-                <span className="font-semibold">{summary.low_attention}</span> minor
+                <span className="font-semibold">{summary.lowAttention}</span> minor
               </div>
             </div>
-            <ExportMenu id={comparison.id} includeMinor={filters.includeMinor} />
+            <ExportMenu
+              comparison={comparison}
+              changes={allChanges}
+              includeMinor={filters.includeMinor}
+            />
           </div>
         </div>
       </header>
@@ -257,7 +255,6 @@ export default function ComparisonPage() {
       ) : null}
 
       <div className="flex min-h-0 flex-1">
-        {/* Changes panel */}
         <section
           className="flex min-h-0 w-full flex-col border-r border-rule bg-paper lg:w-[46%] xl:w-[42%]"
           aria-label="Detected changes"
@@ -266,7 +263,7 @@ export default function ComparisonPage() {
             {(
               [
                 ["summary", "Summary"],
-                ["changes", `Changes${facets ? ` (${facets.total})` : ""}`],
+                ["changes", `Changes (${allChanges.length})`],
                 ["sections", "Section map"],
               ] as const
             ).map(([key, label]) => (
@@ -298,38 +295,38 @@ export default function ComparisonPage() {
               facets={facets}
               filters={filters}
               onChange={setFilters}
-              resultCount={changes?.length ?? 0}
+              resultCount={visible.length}
+              totalCount={allChanges.length}
             />
           ) : null}
 
-          <div ref={listRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto p-3">
+          <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-3">
             {tab === "summary" ? (
-              <SummaryPanel comparison={comparison} onJump={jumpToChange} />
+              <SummaryPanel comparison={comparison} result={result} onJump={jumpToChange} />
             ) : tab === "sections" ? (
-              <SectionMapPanel rows={comparison.section_map} />
-            ) : !changes ? (
-              <Spinner label="Loading changes…" />
-            ) : changes.length === 0 ? (
+              <SectionMapPanel rows={result.sectionMap} />
+            ) : visible.length === 0 ? (
               <NoChanges
                 identical={summary.identical}
-                noMaterial={noMaterialChanges}
-                minorCount={summary.minor_changes}
+                minorCount={summary.minorChanges}
                 filtered={
                   filters.categories.length + filters.importance.length + filters.types.length > 0 ||
                   Boolean(filters.query)
                 }
                 onShowMinor={() => setFilters({ ...filters, includeMinor: true })}
-                onClear={() => setFilters(EMPTY_FILTERS)}
+                onClear={() => setFilters({ ...EMPTY_FILTERS, includeMinor: true })}
               />
             ) : (
               <div className="space-y-2.5">
-                {changes.map((change) => (
+                {visible.map((change) => (
                   <ChangeCard
-                    key={change.record_id}
+                    key={change.id}
                     change={change}
-                    selected={change.record_id === selectedId}
+                    selected={change.id === selectedId}
+                    approximatePageA={docA.paginationApproximate}
+                    approximatePageB={docB.paginationApproximate}
                     onSelect={() => selectChange(change)}
-                    onReview={(status, comment) => review(change, status, comment)}
+                    onReview={(status, note) => review(change, status, note)}
                     onCitation={onCitation}
                   />
                 ))}
@@ -337,81 +334,47 @@ export default function ComparisonPage() {
             )}
           </div>
 
-          <footer className="border-t border-rule px-3 py-2">
-            <Disclaimer text={comparison.disclaimer} />
+          <footer className="flex items-center gap-3 border-t border-rule px-3 py-2">
+            <LocalBadge />
+            <Disclaimer text={result.disclaimer} />
           </footer>
         </section>
 
-        {/* Side-by-side documents */}
         {docsOpen ? (
-          <section
-            className="hidden min-h-0 flex-1 lg:flex"
-            aria-label="Original documents"
-          >
+          <section className="hidden min-h-0 flex-1 lg:flex" aria-label="Original documents">
             <div className="min-w-0 flex-1 border-r border-rule bg-paper">
               <DocumentPane
                 side="A"
-                meta={docA}
-                content={contentA}
+                model={models.a}
+                original={originals.a}
                 citation={focus.a}
-                documentId={comparison.version_a_document_id}
                 highlightQuery={filters.query}
               />
             </div>
             <div className="min-w-0 flex-1 bg-paper">
               <DocumentPane
                 side="B"
-                meta={docB}
-                content={contentB}
+                model={models.b}
+                original={originals.b}
                 citation={focus.b}
-                documentId={comparison.version_b_document_id}
                 highlightQuery={filters.query}
               />
             </div>
           </section>
         ) : null}
       </div>
-
-      {/* Mobile: the documents live behind the selected change (PDD §29). */}
-      {selected ? (
-        <div className="border-t border-rule bg-paper p-3 lg:hidden">
-          <div className="label-caps mb-1">Selected change — source passages</div>
-          <div className="grid gap-2">
-            {(["A", "B"] as const).map((side) => {
-              const citation = side === "A" ? selected.citation_a : selected.citation_b;
-              return (
-                <div key={side} className="rounded border border-rule-soft bg-canvas p-2">
-                  <div className="label-caps">Version {side}</div>
-                  {citation ? (
-                    <>
-                      <div className="text-[11px] text-accent">
-                        {citation.section} · page {citation.page}
-                      </div>
-                      <p className="source-quote mt-1">{citation.text}</p>
-                    </>
-                  ) : (
-                    <p className="text-[12px] text-ink-faint">No corresponding content</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
 
 function NoChanges({
   identical,
-  noMaterial,
   minorCount,
   filtered,
   onShowMinor,
   onClear,
 }: {
   identical: boolean;
-  noMaterial: boolean;
   minorCount: number;
   filtered: boolean;
   onShowMinor: () => void;
@@ -442,85 +405,23 @@ function NoChanges({
       />
     );
   }
-  if (noMaterial || minorCount > 0) {
-    return (
-      <EmptyState
-        title="No material changes detected"
-        body={`We found ${minorCount} minor formatting or wording difference${
-          minorCount === 1 ? "" : "s"
-        }.`}
-        action={
-          <button
-            type="button"
-            onClick={onShowMinor}
-            className="mt-2 rounded border border-rule px-3 py-1.5 text-[12.5px] hover:bg-canvas"
-          >
-            Review minor changes
-          </button>
-        }
-      />
-    );
-  }
   return (
     <EmptyState
       title="No material changes detected"
-      body="Nothing in Version B differs materially from Version A. Enable minor changes to see formatting-level differences."
+      body={
+        minorCount > 0
+          ? `We found ${minorCount} minor formatting or wording difference${minorCount === 1 ? "" : "s"}.`
+          : "Nothing in Version B differs materially from Version A."
+      }
       action={
         <button
           type="button"
           onClick={onShowMinor}
           className="mt-2 rounded border border-rule px-3 py-1.5 text-[12.5px] hover:bg-canvas"
         >
-          Show minor changes
+          {minorCount > 0 ? "Review minor changes" : "Show minor changes"}
         </button>
       }
     />
-  );
-}
-
-function ExportMenu({ id, includeMinor }: { id: string; includeMinor: boolean }) {
-  const [open, setOpen] = useState(false);
-  const formats: { key: "pdf" | "docx" | "csv" | "xlsx"; label: string }[] = [
-    { key: "pdf", label: "Comparison report (PDF)" },
-    { key: "docx", label: "Comparison report (DOCX)" },
-    { key: "xlsx", label: "Change table (XLSX)" },
-    { key: "csv", label: "Change table (CSV)" },
-  ];
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="rounded-md border border-rule px-3 py-1.5 text-[12.5px] font-medium transition-colors hover:bg-canvas"
-      >
-        Export
-      </button>
-      {open ? (
-        <>
-          <button
-            type="button"
-            aria-label="Close export menu"
-            className="fixed inset-0 z-10 cursor-default"
-            onClick={() => setOpen(false)}
-          />
-          <div className="absolute right-0 z-20 mt-1 w-[232px] overflow-hidden rounded-md border border-rule bg-paper shadow-lg">
-            {formats.map((format) => (
-              <a
-                key={format.key}
-                href={api.exportUrl(id, format.key, includeMinor)}
-                onClick={() => setOpen(false)}
-                className="block border-b border-rule-soft px-3 py-2 text-[12.5px] last:border-0 hover:bg-canvas"
-              >
-                {format.label}
-              </a>
-            ))}
-            <p className="border-t border-rule bg-canvas px-3 py-1.5 text-[10.5px] text-ink-faint">
-              {includeMinor ? "Includes minor changes" : "Material changes only"}
-            </p>
-          </div>
-        </>
-      ) : null}
-    </div>
   );
 }

@@ -1,56 +1,73 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { StoredDocument } from "@/lib/store/db";
+import { deleteDocument } from "@/lib/store/db";
+import { listDocuments, originalUrl, verifyIntegrity } from "@/lib/workflow";
 import { formatBytes, formatDateTime } from "@/lib/format";
-import { EmptyState, Spinner } from "@/components/ui";
+import { EmptyState, ErrorNote, LocalBadge, Spinner } from "@/components/ui";
 
-interface DocumentRow {
-  id: string;
-  filename: string;
-  size_bytes: number;
-  sha256: string;
-  created_at: string;
-  uploaded_by: string | null;
-  page_count: number | null;
-  extraction_status: string | null;
-}
+type Integrity = "checking" | "verified" | "failed" | "missing";
 
 export default function DocumentsPage() {
-  const [rows, setRows] = useState<DocumentRow[] | null>(null);
+  const [rows, setRows] = useState<StoredDocument[] | null>(null);
+  const [integrity, setIntegrity] = useState<Record<string, Integrity>>({});
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/documents")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
-      .then((body: { documents: DocumentRow[] }) => setRows(body.documents))
+  const load = useCallback(() => {
+    listDocuments()
+      .then(async (docs) => {
+        setRows(docs);
+        // Re-hash each stored original and compare with what was recorded at ingest.
+        const results = await Promise.all(
+          docs.map(async (d) => [d.id, await verifyIntegrity(d.id)] as const),
+        );
+        setIntegrity(Object.fromEntries(results));
+      })
       .catch((err: Error) => setError(err.message));
   }, []);
 
+  useEffect(load, [load]);
+
+  async function open(id: string): Promise<void> {
+    const url = await originalUrl(id);
+    if (url) window.open(url, "_blank", "noopener");
+  }
+
+  async function remove(id: string): Promise<void> {
+    await deleteDocument(id);
+    load();
+  }
+
   return (
     <div className="mx-auto max-w-[1100px] px-4 py-10 sm:px-6">
-      <h1 className="serif-title text-[24px] font-semibold">Documents</h1>
-      <p className="mb-5 mt-1 text-[13px] text-ink-soft">
-        Originals are stored unchanged. Each file&rsquo;s SHA-256 is recorded on upload and
-        re-checked before the file is served or compared.
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="serif-title text-[24px] font-semibold">Documents</h1>
+        <LocalBadge />
+      </div>
+      <p className="mb-5 mt-1 max-w-prose text-[13px] text-ink-soft">
+        Originals are stored unchanged in this browser. Each file&rsquo;s SHA-256 is
+        recorded when it is added and re-checked here, so a file altered in storage is
+        reported rather than quietly used.
       </p>
 
       {error ? (
-        <div className="card p-4 text-[13px] text-remove">{error}</div>
+        <ErrorNote>{error}</ErrorNote>
       ) : !rows ? (
         <div className="card p-6">
           <Spinner label="Loading…" />
         </div>
       ) : rows.length === 0 ? (
         <EmptyState
-          title="No documents uploaded"
+          title="No documents stored"
           body="Documents appear here once you start a comparison."
           action={
             <Link
               href="/new"
               className="mt-2 rounded-md border border-rule px-3 py-1.5 text-[13px] font-medium hover:bg-canvas"
             >
-              Upload documents
+              Add documents
             </Link>
           }
         />
@@ -59,62 +76,61 @@ export default function DocumentsPage() {
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr className="border-b border-rule bg-canvas text-left">
-                <th scope="col" className="px-4 py-2.5 font-medium text-ink-soft">
-                  File
-                </th>
+                <th scope="col" className="px-4 py-2.5 font-medium text-ink-soft">File</th>
                 <th scope="col" className="px-4 py-2.5 text-right font-medium text-ink-soft">
                   Pages
                 </th>
                 <th scope="col" className="px-4 py-2.5 text-right font-medium text-ink-soft">
                   Size
                 </th>
-                <th
-                  scope="col"
-                  className="hidden px-4 py-2.5 font-medium text-ink-soft md:table-cell"
-                >
-                  Uploaded
+                <th scope="col" className="hidden px-4 py-2.5 font-medium text-ink-soft md:table-cell">
+                  Added
                 </th>
-                <th scope="col" className="px-4 py-2.5 font-medium text-ink-soft">
-                  Integrity
-                </th>
+                <th scope="col" className="px-4 py-2.5 font-medium text-ink-soft">Integrity</th>
+                <th scope="col" className="px-4 py-2.5" />
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id} className="border-b border-rule-soft last:border-0 hover:bg-canvas">
                   <td className="px-4 py-3">
-                    <a
-                      href={`/api/documents/${row.id}/file`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-medium hover:text-accent hover:underline"
+                    <button
+                      type="button"
+                      onClick={() => void open(row.id)}
+                      className="text-left font-medium hover:text-accent hover:underline"
                     >
                       {row.filename}
-                    </a>
+                    </button>
                     <div className="font-mono text-[10.5px] text-ink-faint">
                       sha256 {row.sha256.slice(0, 24)}…
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums">{row.page_count ?? "—"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">
-                    {formatBytes(row.size_bytes)}
-                  </td>
-                  <td className="hidden px-4 py-3 text-ink-soft md:table-cell">
-                    {formatDateTime(row.created_at)}
-                    {row.uploaded_by ? (
-                      <span className="block text-[11px] text-ink-faint">{row.uploaded_by}</span>
+                    {row.model.pages.length}
+                    {row.model.paginationApproximate ? (
+                      <span className="text-ink-faint" title="Estimated pagination">
+                        {" "}
+                        ~
+                      </span>
                     ) : null}
                   </td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {formatBytes(row.sizeBytes)}
+                  </td>
+                  <td className="hidden px-4 py-3 text-ink-soft md:table-cell">
+                    {formatDateTime(row.createdAt)}
+                  </td>
                   <td className="px-4 py-3">
-                    {row.extraction_status === "extraction_successful" ? (
-                      <span className="text-[12px] text-add">Readable</span>
-                    ) : row.extraction_status === "partial" ? (
-                      <span className="text-[12px] text-attention">Partially readable</span>
-                    ) : (
-                      <span className="text-[12px] text-ink-faint">
-                        {row.extraction_status ?? "—"}
-                      </span>
-                    )}
+                    <IntegrityCell state={integrity[row.id]} />
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => void remove(row.id)}
+                      className="text-[12px] text-ink-faint hover:text-remove hover:underline"
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -123,5 +139,20 @@ export default function DocumentsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function IntegrityCell({ state }: { state: Integrity | undefined }) {
+  if (!state || state === "checking") {
+    return <span className="text-[12px] text-ink-faint">Checking…</span>;
+  }
+  if (state === "verified") return <span className="text-[12px] text-add">Verified</span>;
+  if (state === "missing") {
+    return <span className="text-[12px] text-attention">Original missing</span>;
+  }
+  return (
+    <span className="text-[12px] font-medium text-remove" title="Stored bytes no longer match the recorded hash">
+      Hash mismatch
+    </span>
   );
 }

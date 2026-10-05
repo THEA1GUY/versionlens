@@ -3,21 +3,26 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import type { Stage } from "@/lib/engine/compare";
+import type { LlmSettings } from "@/lib/engine/providers";
+import { providerById } from "@/lib/engine/providers";
+import type { StoredDocument } from "@/lib/store/db";
+import { loadLlmSettings } from "@/lib/store/settings";
+import { MAX_FILE_BYTES, ingestFile, runComparison } from "@/lib/workflow";
 import { formatBytes } from "@/lib/format";
-import type { Health, UploadedDocument } from "@/lib/types";
-import { Disclaimer, Spinner, WarningNote } from "@/components/ui";
+import { ErrorNote, LocalBadge, Spinner, WarningNote } from "@/components/ui";
+import { ProcessingView } from "@/components/panels";
 
 type Slot = "a" | "b";
 
 interface SlotState {
   file: File | null;
-  uploaded: UploadedDocument | null;
-  uploading: boolean;
+  stored: StoredDocument | null;
+  busy: boolean;
   error: string | null;
 }
 
-const EMPTY: SlotState = { file: null, uploaded: null, uploading: false, error: null };
+const EMPTY: SlotState = { file: null, stored: null, busy: false, error: null };
 
 export default function NewComparisonPage() {
   const router = useRouter();
@@ -25,63 +30,67 @@ export default function NewComparisonPage() {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [notes, setNotes] = useState("");
-  const [locale, setLocale] = useState<"DMY" | "MDY">("DMY");
-  const [useSemantic, setUseSemantic] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [health, setHealth] = useState<Health | null>(null);
+  const [llm, setLlm] = useState<LlmSettings | null>(null);
+  const [running, setRunning] = useState(false);
+  const [stage, setStage] = useState<{ stage: Stage; message: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.health().then(setHealth).catch(() => setHealth(null));
+    loadLlmSettings().then(setLlm).catch(() => setLlm(null));
   }, []);
 
-  const upload = useCallback(async (slot: Slot, file: File) => {
-    setSlots((prev) => ({
-      ...prev,
-      [slot]: { file, uploaded: null, uploading: true, error: null },
-    }));
+  const ingest = useCallback(async (slot: Slot, file: File) => {
+    setSlots((prev) => ({ ...prev, [slot]: { file, stored: null, busy: true, error: null } }));
     try {
-      const uploaded = await api.uploadDocument(file);
-      setSlots((prev) => ({
-        ...prev,
-        [slot]: { file, uploaded, uploading: false, error: null },
-      }));
-      // Suggest a comparison name once both filenames are known.
+      const stored = await ingestFile(file, slot === "a" ? "A" : "B");
+      setSlots((prev) => ({ ...prev, [slot]: { file, stored, busy: false, error: null } }));
       setName((current) => current || suggestName(file.name));
     } catch (err) {
       setSlots((prev) => ({
         ...prev,
-        [slot]: { file, uploaded: null, uploading: false, error: (err as Error).message },
+        [slot]: {
+          file,
+          stored: null,
+          busy: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
       }));
     }
   }, []);
 
-  const ready = Boolean(slots.a.uploaded && slots.b.uploaded);
+  const ready = Boolean(slots.a.stored && slots.b.stored);
   const sameFile =
-    slots.a.uploaded && slots.b.uploaded && slots.a.uploaded.sha256 === slots.b.uploaded.sha256;
+    slots.a.stored && slots.b.stored && slots.a.stored.sha256 === slots.b.stored.sha256;
 
-  async function submit() {
-    if (!slots.a.uploaded || !slots.b.uploaded) return;
-    setSubmitting(true);
-    setSubmitError(null);
+  async function submit(): Promise<void> {
+    if (!slots.a.stored || !slots.b.stored) return;
+    setRunning(true);
+    setError(null);
     try {
-      const { id } = await api.createComparison({
-        version_a_document_id: slots.a.uploaded.id,
-        version_b_document_id: slots.b.uploaded.id,
-        name: name.trim() || undefined,
-        document_category: category || undefined,
-        notes: notes.trim() || undefined,
-        locale,
-        use_semantic: useSemantic,
+      const comparison = await runComparison(slots.a.stored.id, slots.b.stored.id, {
+        name,
+        documentCategory: category || null,
+        notes: notes.trim() || null,
+        onProgress: (s, message) => setStage({ stage: s, message }),
       });
-      router.push(`/comparisons/${id}`);
+      router.push(`/comparisons/${comparison.id}`);
     } catch (err) {
-      setSubmitError((err as Error).message);
-      setSubmitting(false);
+      setError(err instanceof Error ? err.message : String(err));
+      setRunning(false);
     }
   }
 
-  const accept = health?.supported_formats.join(",") ?? ".pdf,.docx,.txt";
+  if (running) {
+    return (
+      <ProcessingView
+        status={stage?.stage ?? "EXTRACTING"}
+        message={stage?.message ?? "Starting"}
+        error={error}
+      />
+    );
+  }
+
+  const provider = llm ? providerById(llm.provider) : null;
 
   return (
     <div className="mx-auto max-w-[860px] px-4 py-10 sm:px-6">
@@ -93,9 +102,13 @@ export default function NewComparisonPage() {
         <span>New comparison</span>
       </nav>
 
-      <h1 className="serif-title text-[26px] font-semibold">Compare versions</h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="serif-title text-[26px] font-semibold">Compare versions</h1>
+        <LocalBadge />
+      </div>
       <p className="mt-2 max-w-prose text-[13.5px] text-ink-soft">
-        Both originals are stored unchanged and hashed on upload. Neither file is modified.
+        Both files are read in this browser, hashed, and stored on this device. Neither
+        file is uploaded or modified.
       </p>
 
       <div className="mt-7 grid gap-4 sm:grid-cols-2">
@@ -104,9 +117,7 @@ export default function NewComparisonPage() {
           title="Version A"
           hint="The earlier version"
           state={slots.a}
-          accept={accept}
-          maxBytes={health?.max_upload_bytes}
-          onPick={(file) => upload("a", file)}
+          onPick={(file) => void ingest("a", file)}
           onClear={() => setSlots((prev) => ({ ...prev, a: EMPTY }))}
         />
         <UploadSlot
@@ -114,9 +125,7 @@ export default function NewComparisonPage() {
           title="Version B"
           hint="The revised version"
           state={slots.b}
-          accept={accept}
-          maxBytes={health?.max_upload_bytes}
-          onPick={(file) => upload("b", file)}
+          onPick={(file) => void ingest("b", file)}
           onClear={() => setSlots((prev) => ({ ...prev, b: EMPTY }))}
         />
       </div>
@@ -124,8 +133,8 @@ export default function NewComparisonPage() {
       {sameFile ? (
         <div className="mt-4">
           <WarningNote>
-            Both slots hold the same file — identical SHA-256. The comparison will report no
-            changes.
+            Both slots hold the same file — identical SHA-256. The comparison will report
+            no changes.
           </WarningNote>
         </div>
       ) : null}
@@ -172,65 +181,46 @@ export default function NewComparisonPage() {
               className="w-full resize-y rounded-md border border-rule bg-paper px-2.5 py-1.5 text-[13px] outline-none focus:border-accent"
             />
           </label>
-          <label className="block">
-            <span className="mb-1 block text-[12.5px] font-medium text-ink-soft">
-              Numeric date order
-            </span>
-            <select
-              value={locale}
-              onChange={(e) => setLocale(e.target.value as "DMY" | "MDY")}
-              className="w-full rounded-md border border-rule bg-paper px-2.5 py-1.5 text-[13px] outline-none focus:border-accent"
-            >
-              <option value="DMY">Day/Month/Year — 15/10/2026</option>
-              <option value="MDY">Month/Day/Year — 10/15/2026</option>
-            </select>
-            <span className="mt-1 block text-[11.5px] text-ink-faint">
-              Dates like 04/05/2026 are flagged as low confidence either way.
-            </span>
-          </label>
-          <label className="flex items-start gap-2.5 pt-6">
-            <input
-              type="checkbox"
-              checked={useSemantic}
-              disabled={!health?.semantic_available}
-              onChange={(e) => setUseSemantic(e.target.checked)}
-              className="mt-0.5 h-3.5 w-3.5 accent-[#1a4fd6]"
-            />
-            <span className="text-[12.5px]">
-              <span className="font-medium">Semantic meaning analysis</span>
-              <span className="block text-[11.5px] text-ink-faint">
-                {health?.semantic_available
-                  ? "Reviews aligned passages for meaning changes a text diff cannot see."
-                  : "No analysis model configured — deterministic comparison only."}
-              </span>
-            </span>
-          </label>
         </div>
       </fieldset>
 
-      {submitError ? (
-        <p className="mt-4 text-[13px] text-remove">{submitError}</p>
+      <p className="mt-3 text-[12px] text-ink-soft">
+        {llm?.enabled && provider ? (
+          <>
+            Semantic analysis is <span className="font-medium text-ink">on</span>, using{" "}
+            {provider.label} ({llm.model}). Aligned passages are sent to that provider with
+            your key.
+          </>
+        ) : (
+          <>
+            Semantic analysis is off — comparison will use deterministic signals only.{" "}
+            <Link href="/settings" className="text-accent hover:underline">
+              Add a model key
+            </Link>{" "}
+            to enable meaning-change detection.
+          </>
+        )}
+      </p>
+
+      {error ? (
+        <div className="mt-4">
+          <ErrorNote>{error}</ErrorNote>
+        </div>
       ) : null}
 
       <div className="mt-6 flex items-center gap-3">
         <button
           type="button"
-          onClick={submit}
-          disabled={!ready || submitting}
+          onClick={() => void submit()}
+          disabled={!ready}
           className="rounded-md bg-ink px-4 py-2 text-[13.5px] font-medium text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:bg-ink-faint"
         >
-          {submitting ? "Starting…" : "Compare documents"}
+          Compare documents
         </button>
         {!ready ? (
-          <span className="text-[12.5px] text-ink-faint">Upload both versions to continue.</span>
+          <span className="text-[12.5px] text-ink-faint">Add both versions to continue.</span>
         ) : null}
       </div>
-
-      {health ? (
-        <footer className="mt-10 border-t border-rule pt-4">
-          <Disclaimer text={health.disclaimer} />
-        </footer>
-      ) : null}
     </div>
   );
 }
@@ -245,8 +235,6 @@ function UploadSlot({
   title,
   hint,
   state,
-  accept,
-  maxBytes,
   onPick,
   onClear,
 }: {
@@ -254,15 +242,13 @@ function UploadSlot({
   title: string;
   hint: string;
   state: SlotState;
-  accept: string;
-  maxBytes: number | undefined;
   onPick: (file: File) => void;
   onClear: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
-  function handleFiles(files: FileList | null) {
+  function handleFiles(files: FileList | null): void {
     const file = files?.[0];
     if (file) onPick(file);
   }
@@ -290,26 +276,27 @@ function UploadSlot({
         ref={inputRef}
         id={`file-${slot}`}
         type="file"
-        accept={accept}
+        accept=".pdf,.docx,.txt,.md"
         className="sr-only"
         onChange={(e) => handleFiles(e.target.files)}
       />
 
-      {state.uploaded ? (
+      {state.stored ? (
         <div className="mt-3">
           <div className="flex items-start gap-2">
             <span aria-hidden="true" className="mt-[1px] text-add">
               ✓
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-medium">{state.uploaded.filename}</p>
+              <p className="truncate text-[13px] font-medium">{state.stored.filename}</p>
               <p className="text-[11.5px] text-ink-faint">
-                {state.uploaded.page_count} page{state.uploaded.page_count === 1 ? "" : "s"} ·{" "}
-                {state.uploaded.section_count} sections ·{" "}
-                {formatBytes(state.uploaded.size_bytes)}
+                {state.stored.model.pages.length} page
+                {state.stored.model.pages.length === 1 ? "" : "s"} ·{" "}
+                {state.stored.model.blocks.length} blocks ·{" "}
+                {formatBytes(state.stored.sizeBytes)}
               </p>
               <p className="mt-1 font-mono text-[10.5px] text-ink-faint">
-                sha256 {state.uploaded.sha256.slice(0, 16)}…
+                sha256 {state.stored.sha256.slice(0, 16)}…
               </p>
             </div>
             <button
@@ -320,11 +307,11 @@ function UploadSlot({
               Replace
             </button>
           </div>
-          {state.uploaded.warnings.length > 0 ? (
+          {state.stored.model.warnings.length > 0 ? (
             <div className="mt-3">
               <WarningNote>
-                <ul className="list-inside list-disc">
-                  {state.uploaded.warnings.map((w) => (
+                <ul className="list-inside list-disc space-y-0.5">
+                  {state.stored.model.warnings.map((w) => (
                     <li key={w}>{w}</li>
                   ))}
                 </ul>
@@ -332,7 +319,7 @@ function UploadSlot({
             </div>
           ) : null}
         </div>
-      ) : state.uploading ? (
+      ) : state.busy ? (
         <div className="mt-4">
           <Spinner label={`Reading ${state.file?.name ?? "document"}…`} />
         </div>
@@ -343,14 +330,15 @@ function UploadSlot({
             onClick={() => inputRef.current?.click()}
             className="w-full rounded-md border border-dashed border-rule px-3 py-6 text-[13px] text-ink-soft transition-colors hover:border-accent hover:bg-canvas hover:text-ink"
           >
-            <span className="block font-medium">Upload file</span>
+            <span className="block font-medium">Choose file</span>
             <span className="mt-0.5 block text-[11.5px] text-ink-faint">
-              or drag and drop — PDF, DOCX
-              {maxBytes ? `, up to ${formatBytes(maxBytes)}` : ""}
+              or drag and drop — PDF, DOCX, up to {formatBytes(MAX_FILE_BYTES)}
             </span>
           </button>
           {state.error ? (
-            <p className="mt-2 text-[12.5px] text-remove">{state.error}</p>
+            <div className="mt-2">
+              <ErrorNote>{state.error}</ErrorNote>
+            </div>
           ) : null}
         </div>
       )}

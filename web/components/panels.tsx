@@ -1,66 +1,67 @@
 "use client";
 
-import type { Comparison, Facets, Importance, SectionMapRow } from "@/lib/types";
-import { CATEGORY_LABEL, TYPE_LABEL, categoryLabel, formatDateTime } from "@/lib/format";
+import type { Category, Importance } from "@/lib/engine/changes";
+import { CATEGORY_LABEL, TYPE_LABEL } from "@/lib/engine/changes";
+import type { ComparisonResult, SectionMapRow, Stage } from "@/lib/engine/compare";
+import type { StoredComparison } from "@/lib/store/db";
+import { formatDateTime } from "@/lib/format";
+import { reviewProgress } from "@/lib/workflow";
 import { ProgressBar, WarningNote } from "./ui";
 
-/** Business-level changes first, before any text difference (PDD §9). */
+/** Business-level changes first, before any text difference. */
 export function SummaryPanel({
   comparison,
+  result,
   onJump,
 }: {
-  comparison: Comparison;
-  onJump: (changeKey: string) => void;
+  comparison: StoredComparison;
+  result: ComparisonResult;
+  onJump: (changeId: string) => void;
 }) {
-  const s = comparison.summary;
-  const progress = s.review_progress;
+  const s = result.summary;
+  const progress = reviewProgress(comparison);
+  const maxCategory = Math.max(1, ...Object.values(s.byCategory));
 
   return (
     <div className="space-y-5">
       <section>
         <p className="text-[14px] leading-relaxed">{s.headline}</p>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Stat label="High attention" value={s.high_attention} tone="high" />
-          <Stat label="Medium attention" value={s.medium_attention} tone="medium" />
-          <Stat label="Minor" value={s.low_attention} tone="low" />
-          <Stat label="Total" value={s.total_changes} tone="low" />
+          <Stat label="High attention" value={s.highAttention} tone="high" />
+          <Stat label="Medium attention" value={s.mediumAttention} tone="medium" />
+          <Stat label="Minor" value={s.lowAttention} tone="low" />
+          <Stat label="Total" value={s.totalChanges} tone="low" />
         </div>
       </section>
 
-      {comparison.warnings.length > 0 ? (
+      {result.warnings.length > 0 ? (
         <section className="space-y-2">
-          {comparison.warnings.map((warning) => (
+          {result.warnings.map((warning) => (
             <WarningNote key={warning}>{warning}</WarningNote>
           ))}
         </section>
       ) : null}
 
-      {s.key_changes.length > 0 ? (
+      {s.keyChanges.length > 0 ? (
         <section>
           <h3 className="label-caps mb-2">Key changes</h3>
           <ol className="space-y-1.5">
-            {s.key_changes.map((item) => (
-              <li key={item.change_id}>
+            {s.keyChanges.map((item) => (
+              <li key={item.changeId}>
                 <button
                   type="button"
-                  onClick={() => onJump(item.change_id)}
+                  onClick={() => onJump(item.changeId)}
                   className="group w-full rounded border border-rule bg-paper px-3 py-2 text-left transition-colors hover:border-accent hover:bg-accent-soft"
                 >
-                  <span className="label-caps">{categoryLabel(item.category)}</span>
+                  <span className="label-caps">
+                    <span aria-hidden="true" className="mr-1.5 font-mono text-remove">
+                      ▲
+                    </span>
+                    {CATEGORY_LABEL[item.category]}
+                  </span>
                   <span className="mt-0.5 block text-[13px] leading-snug group-hover:text-accent">
                     {item.summary}
                   </span>
-                  {item.citation_a || item.citation_b ? (
-                    <span className="mt-1 block text-[11px] text-ink-faint">
-                      {item.citation_a
-                        ? `A: ${item.citation_a.section} · p${item.citation_a.page}`
-                        : "A: —"}
-                      {"   "}
-                      {item.citation_b
-                        ? `B: ${item.citation_b.section} · p${item.citation_b.page}`
-                        : "B: —"}
-                    </span>
-                  ) : null}
                 </button>
               </li>
             ))}
@@ -68,23 +69,21 @@ export function SummaryPanel({
         </section>
       ) : null}
 
-      {Object.keys(s.by_category).length > 0 ? (
+      {Object.keys(s.byCategory).length > 0 ? (
         <section>
           <h3 className="label-caps mb-2">Changes by category</h3>
           <ul className="space-y-1">
-            {Object.entries(s.by_category)
+            {Object.entries(s.byCategory)
               .sort((a, b) => b[1] - a[1])
               .map(([key, count]) => (
                 <li key={key} className="flex items-baseline gap-2 text-[12.5px]">
                   <span className="w-[130px] shrink-0 text-ink-soft">
-                    {CATEGORY_LABEL[key] ?? key}
+                    {CATEGORY_LABEL[key as Category] ?? key}
                   </span>
-                  <span className="tabular-nums font-medium">{count}</span>
+                  <span className="font-medium tabular-nums">{count}</span>
                   <span
                     className="h-1 rounded-full bg-rule"
-                    style={{
-                      width: `${Math.max(4, (count / Math.max(...Object.values(s.by_category))) * 120)}px`,
-                    }}
+                    style={{ width: `${Math.max(4, (count / maxCategory) * 120)}px` }}
                     aria-hidden="true"
                   />
                 </li>
@@ -93,7 +92,7 @@ export function SummaryPanel({
         </section>
       ) : null}
 
-      {progress && progress.total > 0 ? (
+      {progress.total > 0 ? (
         <section>
           <h3 className="label-caps mb-2">Review progress</h3>
           <div className="mb-2 text-[12.5px] text-ink-soft">
@@ -102,8 +101,8 @@ export function SummaryPanel({
           <ProgressBar value={progress.reviewed} total={progress.total} />
           <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-[12.5px]">
             <Row label="Confirmed" value={progress.confirmed} />
-            <Row label="False alerts" value={progress.false_alerts} />
-            <Row label="Needs discussion" value={progress.needs_discussion} />
+            <Row label="False alerts" value={progress.falseAlerts} />
+            <Row label="Needs discussion" value={progress.needsDiscussion} />
             <Row label="Unreviewed" value={progress.unreviewed} />
           </dl>
         </section>
@@ -111,29 +110,29 @@ export function SummaryPanel({
 
       <section>
         <h3 className="label-caps mb-2">Provenance</h3>
-        <dl className="grid gap-x-6 gap-y-1 text-[12px] sm:grid-cols-2">
+        <dl className="grid gap-x-6 gap-y-1 text-[12px]">
           {(["a", "b"] as const).map((side) => {
-            const doc = comparison.documents[side];
-            if (!doc) return null;
+            const doc = result.documents[side];
             return (
-              <div key={side} className="sm:col-span-2">
+              <div key={side}>
                 <dt className="label-caps">Version {side.toUpperCase()}</dt>
                 <dd className="text-ink">
-                  {doc.filename} · {doc.page_count} pages · {doc.section_count} sections
-                  <span className="mt-0.5 block font-mono text-[10.5px] text-ink-faint">
+                  {doc.filename} · {doc.pageCount} pages · {doc.sectionCount} sections
+                  {doc.paginationApproximate ? " · pages estimated" : ""}
+                  <span className="mt-0.5 block break-all font-mono text-[10.5px] text-ink-faint">
                     sha256 {doc.sha256}
                   </span>
                 </dd>
               </div>
             );
           })}
-          <Row label="Engine" value={String(comparison.audit.engine_version ?? "—")} />
-          <Row label="Extraction" value={String(comparison.audit.extraction_version ?? "—")} />
-          <Row
-            label="Analysis model"
-            value={String(comparison.audit.analysis_model_version ?? "—")}
-          />
-          <Row label="Completed" value={formatDateTime(comparison.completed_at)} />
+          <Row label="Engine" value={result.audit.engineVersion} />
+          <Row label="Extraction" value={result.audit.extractionVersion} />
+          <Row label="Analysis model" value={result.audit.analysisModelVersion} />
+          {result.audit.alignmentsArbitrated > 0 ? (
+            <Row label="Pairings arbitrated" value={result.audit.alignmentsArbitrated} />
+          ) : null}
+          <Row label="Completed" value={formatDateTime(result.audit.completedAt)} />
         </dl>
       </section>
     </div>
@@ -153,7 +152,7 @@ function Stat({
     tone === "high" ? "text-remove" : tone === "medium" ? "text-attention" : "text-ink";
   return (
     <div className="rounded border border-rule bg-paper px-3 py-2">
-      <div className={`text-[20px] font-semibold tabular-nums leading-tight ${accent}`}>
+      <div className={`text-[20px] font-semibold leading-tight tabular-nums ${accent}`}>
         {value}
       </div>
       <div className="label-caps mt-0.5">{label}</div>
@@ -163,14 +162,14 @@ function Stat({
 
 function Row({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
+    <div className="flex items-baseline justify-between gap-3 border-b border-rule-soft pb-0.5">
       <dt className="text-ink-soft">{label}</dt>
       <dd className="tabular-nums text-ink">{value}</dd>
     </div>
   );
 }
 
-/** Where the changes are concentrated (PDD §17). */
+/** Where the changes are concentrated. */
 export function SectionMapPanel({ rows }: { rows: SectionMapRow[] }) {
   if (rows.length === 0) {
     return <p className="text-[13px] text-ink-faint">No section structure was detected.</p>;
@@ -178,7 +177,7 @@ export function SectionMapPanel({ rows }: { rows: SectionMapRow[] }) {
   return (
     <ul className="divide-y divide-rule-soft">
       {rows.map((row, index) => {
-        const label = row.section_b ?? row.section_a ?? "(untitled)";
+        const label = row.sectionB ?? row.sectionA ?? "(untitled)";
         return (
           <li key={index} className="flex items-start gap-3 py-2">
             <div className="min-w-0 flex-1">
@@ -187,24 +186,25 @@ export function SectionMapPanel({ rows }: { rows: SectionMapRow[] }) {
               </div>
               <div className="text-[11px] text-ink-faint">
                 {row.status === "ADDED" ? (
-                  <span className="text-add">New section · page {row.page_b}</span>
+                  <span className="text-add">New section · page {row.pageB}</span>
                 ) : row.status === "REMOVED" ? (
-                  <span className="text-remove">Removed · was page {row.page_a}</span>
+                  <span className="text-remove">Removed · was page {row.pageA}</span>
                 ) : (
                   <>
-                    {row.section_a && row.section_a !== row.section_b ? (
-                      <span>was &ldquo;{row.section_a}&rdquo; · </span>
+                    {row.sectionA && row.sectionA !== row.sectionB ? (
+                      <span>was &ldquo;{row.sectionA}&rdquo; · </span>
                     ) : null}
-                    page {row.page_b ?? row.page_a} · matched{" "}
-                    {Math.round(row.alignment_confidence * 100)}%
+                    page {row.pageB ?? row.pageA} · matched{" "}
+                    {Math.round(row.alignmentConfidence * 100)}%
+                    {row.arbitratedByModel ? " · resolved by model" : ""}
                   </>
                 )}
               </div>
             </div>
             <div className="shrink-0 pt-0.5 text-right">
-              {row.change_count > 0 ? (
+              {row.changeCount > 0 ? (
                 <span className="text-[12px] font-medium tabular-nums">
-                  {row.change_count} change{row.change_count === 1 ? "" : "s"}
+                  {row.changeCount} change{row.changeCount === 1 ? "" : "s"}
                 </span>
               ) : row.status === "MATCHED" ? (
                 <span className="text-[11.5px] text-ink-faint">unchanged</span>
@@ -221,7 +221,6 @@ export interface FilterState {
   categories: string[];
   importance: Importance[];
   types: string[];
-  reviewStatuses: string[];
   includeMinor: boolean;
   query: string;
 }
@@ -230,7 +229,6 @@ export const EMPTY_FILTERS: FilterState = {
   categories: [],
   importance: [],
   types: [],
-  reviewStatuses: [],
   includeMinor: false,
   query: "",
 };
@@ -240,19 +238,20 @@ export function FilterBar({
   filters,
   onChange,
   resultCount,
+  totalCount,
 }: {
-  facets: Facets | null;
+  facets: { category: Record<string, number>; importance: Record<string, number>; type: Record<string, number> };
   filters: FilterState;
   onChange: (next: FilterState) => void;
   resultCount: number;
+  totalCount: number;
 }) {
-  const categories = Object.entries(facets?.category ?? {}).sort((a, b) => b[1] - a[1]);
-  const types = Object.entries(facets?.type ?? {}).sort((a, b) => b[1] - a[1]);
+  const categories = Object.entries(facets.category).sort((a, b) => b[1] - a[1]);
+  const types = Object.entries(facets.type).sort((a, b) => b[1] - a[1]);
   const active =
     filters.categories.length +
     filters.importance.length +
     filters.types.length +
-    filters.reviewStatuses.length +
     (filters.query ? 1 : 0);
 
   function toggle<T extends string>(list: T[], value: T): T[] {
@@ -284,22 +283,24 @@ export function FilterBar({
 
       <div className="flex flex-wrap gap-1">
         <Pill
-          label={`All ${facets?.total ?? 0}`}
+          label={`All ${totalCount}`}
           active={active === 0}
           onClick={() => onChange({ ...EMPTY_FILTERS, includeMinor: filters.includeMinor })}
         />
-        {(["HIGH", "MEDIUM"] as const).map((level) => (
-          <Pill
-            key={level}
-            label={`${level === "HIGH" ? "Important" : "Medium"} ${facets?.importance[level] ?? 0}`}
-            active={filters.importance.includes(level)}
-            onClick={() => onChange({ ...filters, importance: toggle(filters.importance, level) })}
-          />
-        ))}
+        {(["HIGH", "MEDIUM"] as const).map((level) =>
+          facets.importance[level] ? (
+            <Pill
+              key={level}
+              label={`${level === "HIGH" ? "Important" : "Medium"} ${facets.importance[level]}`}
+              active={filters.importance.includes(level)}
+              onClick={() => onChange({ ...filters, importance: toggle(filters.importance, level) })}
+            />
+          ) : null,
+        )}
         {categories.map(([key, count]) => (
           <Pill
             key={key}
-            label={`${categoryLabel(key)} ${count}`}
+            label={`${CATEGORY_LABEL[key as Category] ?? key} ${count}`}
             active={filters.categories.includes(key)}
             onClick={() => onChange({ ...filters, categories: toggle(filters.categories, key) })}
           />
@@ -309,7 +310,7 @@ export function FilterBar({
           .map(([key, count]) => (
             <Pill
               key={key}
-              label={`${TYPE_LABEL[key] ?? key} ${count}`}
+              label={`${TYPE_LABEL[key as keyof typeof TYPE_LABEL] ?? key} ${count}`}
               active={filters.types.includes(key)}
               onClick={() => onChange({ ...filters, types: toggle(filters.types, key) })}
             />
@@ -326,9 +327,7 @@ export function FilterBar({
           />
           Show minor changes
         </label>
-        <span className="text-[11.5px] text-ink-faint">
-          {resultCount} shown
-        </span>
+        <span className="text-[11.5px] text-ink-faint">{resultCount} shown</span>
       </div>
     </div>
   );
@@ -359,8 +358,8 @@ function Pill({
   );
 }
 
-/** Real pipeline stages rather than "AI is thinking…" (PDD §6). */
-const STAGES: { key: string; label: string }[] = [
+/** Real pipeline stages rather than "AI is thinking…". */
+const STAGES: Array<{ key: Stage; label: string }> = [
   { key: "EXTRACTING", label: "Reading both versions" },
   { key: "SEGMENTING", label: "Identifying sections" },
   { key: "ALIGNING", label: "Aligning corresponding sections" },
@@ -374,7 +373,7 @@ export function ProcessingView({
   message,
   error,
 }: {
-  status: string;
+  status: Stage;
   message: string | null;
   error: string | null;
 }) {
@@ -391,11 +390,13 @@ export function ProcessingView({
       ) : (
         <>
           <p className="mt-1.5 text-[12.5px] text-ink-faint">
-            {message ?? "Working…"} — longer documents take longer to align.
+            {message ?? "Working…"} — this runs in your browser, so longer documents take
+            longer to align.
           </p>
           <ol className="mt-5 space-y-2">
             {STAGES.map((stage, index) => {
-              const done = currentIndex > index || status === "COMPLETED" || status === "PARTIAL";
+              const done =
+                currentIndex > index || status === "COMPLETED" || status === "PARTIAL";
               const active = currentIndex === index;
               return (
                 <li key={stage.key} className="flex items-center gap-2.5 text-[13px]">
