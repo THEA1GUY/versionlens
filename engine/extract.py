@@ -100,26 +100,43 @@ def _extract_pdf(path: Path, side: Side) -> tuple[list[Page], list[Block]]:
             status = ExtractionStatus.OK if confidence == 1.0 else ExtractionStatus.LOW_CONFIDENCE
             pages.append(Page(pno, raw, status, confidence))
 
-            table_bboxes = []
+            # Tables and text lines are collected separately but must end up in reading
+            # order: a table emitted before the page's lines would be filed under the
+            # previous section, so a rate card would cite the preamble instead of Pricing.
+            table_bboxes: list[tuple[float, float, float, float]] = []
+            page_items: list[tuple[float, float, Block]] = []
             try:
                 for table in page.find_tables():
                     table_bboxes.append(table.bbox)
-                    blocks.extend(_table_blocks(table, side, pno, len(blocks)))
+                    for block in _table_blocks(table, side, pno, 0):
+                        page_items.append((table.bbox[1], table.bbox[0], block))
             except Exception:  # noqa: BLE001 - tables are best-effort
                 pass
 
             for line_text, bbox in _group_words_into_lines(words, table_bboxes):
-                blocks.append(
-                    Block(
-                        id=_bid(side, pno, len(blocks)),
-                        side=side,
-                        page=pno,
-                        block_index=len(blocks),
-                        block_type=_guess_block_type(line_text),
-                        text=line_text,
-                        bbox=bbox,
+                page_items.append(
+                    (
+                        bbox[1],
+                        bbox[0],
+                        Block(
+                            id="",
+                            side=side,
+                            page=pno,
+                            block_index=0,
+                            block_type=_guess_block_type(line_text),
+                            text=line_text,
+                            bbox=bbox,
+                        ),
                     )
                 )
+
+            # Stable sort keeps a table's rows in the order _table_blocks produced them,
+            # since they all share the table's bbox.
+            page_items.sort(key=lambda item: (round(item[0], 1), item[1]))
+            for _, _, block in page_items:
+                block.block_index = len(blocks)
+                block.id = _bid(side, pno, len(blocks))
+                blocks.append(block)
 
     blocks = _merge_paragraph_lines(blocks, side)
     return pages, blocks

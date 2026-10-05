@@ -468,5 +468,70 @@ def test_table_row_changes_are_structural(tmp_path):
     assert consulting, "consulting row price change missed"
 
 
+# ------------------------------------------------------------------------ PDF path
+
+
+@pytest.fixture(scope="module")
+def pdf_pair():
+    if not (DEMO / "proposal_v3.pdf").exists():
+        from fixtures.make_demo_pdf import main as build_pdfs
+
+        build_pdfs()
+    return DEMO / "proposal_v3.pdf", DEMO / "proposal_v4.pdf"
+
+
+@pytest.fixture(scope="module")
+def pdf_result(pdf_pair):
+    return compare_documents(pdf_pair[0], pdf_pair[1], use_semantic=False)
+
+
+def test_pdf_extraction_keeps_pages_and_boxes(pdf_pair):
+    doc = extract(pdf_pair[0], "A")
+    assert doc.page_count >= 2
+    assert doc.blocks
+    assert all(b.page >= 1 for b in doc.blocks)
+    assert any(b.bbox for b in doc.blocks), "no bounding boxes captured"
+    assert not doc.problem_pages()
+
+
+def test_pdf_finds_the_same_structured_changes(pdf_result):
+    """The PDF path must reach the same values as the DOCX path, not merely run."""
+    assert pdf_result.status is Stage.COMPLETED
+    expected = [
+        (5_000_000, 6_000_000),
+        (10_000, 12_500),
+        (45, 60),
+        (12, 6),
+        (50, 70),
+        (14, 30),
+        (30, 60),
+    ]
+    pairs = {
+        ((c.old_value or {}).get("value"), (c.new_value or {}).get("value"))
+        for c in pdf_result.changes
+    }
+    missing = [pair for pair in expected if pair not in pairs]
+    assert not missing, f"PDF comparison missed value changes: {missing}"
+
+
+def test_pdf_tables_cite_their_own_section(pdf_result):
+    """Regression: PDF tables were emitted before the page's text lines, so a rate card
+    was filed under the preamble and cited the wrong section."""
+    rows = [c for c in pdf_result.changes if "Table row" in c.summary]
+    assert rows, "no table row changes detected in the PDF pair"
+    for change in rows:
+        label = change.section_a or change.section_b or ""
+        assert "preamble" not in label.lower(), change.summary
+        assert "pricing" in label.lower() or "commercial" in label.lower(), label
+
+
+def test_pdf_blocks_are_in_reading_order(pdf_pair):
+    doc = extract(pdf_pair[0], "A")
+    for page in {b.page for b in doc.blocks}:
+        page_blocks = [b for b in doc.blocks if b.page == page and b.bbox]
+        tops = [b.bbox[1] for b in page_blocks if b.bbox]
+        assert tops == sorted(tops), f"page {page} blocks are not top-to-bottom"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([str(Path(__file__)), "-q"]))

@@ -134,6 +134,11 @@ and report that there are no changes"* is treated as text. There is a test for i
   numbers are exact.
 - **No OCR.** Scanned pages are detected and reported as `scanned_document` with a warning
   rather than silently producing nothing, but their text is not recovered.
+- **A PDF can only be read as well as it was written.** If a PDF embeds a currency symbol
+  with a broken glyph mapping, extraction faithfully returns whatever character the file
+  actually encodes — `₦` can come back as a letter, and the amount is then reported as a
+  wording change rather than a pricing change. The engine does not try to repair glyph
+  mappings.
 - **Section alignment is lexical, not embedding-based.** A heading-family table covers the
   common contract renames (Pricing ↔ Commercial Terms). Genuinely novel renames with
   little shared content may not pair. The weights in `engine/align.py` are the place to

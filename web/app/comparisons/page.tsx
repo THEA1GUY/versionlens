@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { ComparisonListItem } from "@/lib/types";
 import { EmptyState, Spinner } from "@/components/ui";
-import { ComparisonTable } from "../page";
+import { ComparisonTable } from "@/components/ComparisonTable";
 
 export default function ComparisonsPage() {
   const [rows, setRows] = useState<ComparisonListItem[] | null>(null);
