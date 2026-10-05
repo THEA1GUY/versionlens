@@ -46,6 +46,7 @@ export default function NewComparisonPage() {
   const [running, setRunning] = useState(false);
   const [stage, setStage] = useState<{ stage: Stage; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ocr, setOcr] = useState<string | null>(null);
 
   useEffect(() => {
     loadLlmSettings().then(setLlm).catch(() => setLlm(null));
@@ -59,10 +60,19 @@ export default function NewComparisonPage() {
     async (index: number, file: File) => {
       setSlot(index, { file, stored: null, busy: true, error: null });
       try {
-        const stored = await ingestFile(file, index === 0 ? "A" : "B");
+        const stored = await ingestFile(file, index === 0 ? "A" : "B", {
+          onOcr: (done, total, pageNumber) =>
+            setOcr(
+              done >= total
+                ? null
+                : `Reading scanned page ${pageNumber} (${done + 1} of ${total})…`,
+            ),
+        });
+        setOcr(null);
         setSlot(index, { file, stored, busy: false, error: null });
         setName((current) => current || suggestName(file.name));
       } catch (err) {
+        setOcr(null);
         setSlot(index, {
           file,
           stored: null,
@@ -156,6 +166,10 @@ export default function NewComparisonPage() {
           />
         ))}
       </div>
+
+      {ocr ? (
+        <p className="mt-3 text-[12.5px] text-ink-soft">{ocr}</p>
+      ) : null}
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         {slots.length < MAX_VERSIONS ? (

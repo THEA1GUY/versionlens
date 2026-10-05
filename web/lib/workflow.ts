@@ -10,6 +10,7 @@ import type { ReviewStatus } from "./engine/changes";
 import { type ComparisonResult, type Stage, compareDocuments } from "./engine/compare";
 import { extractFile, isSupported } from "./engine/extract";
 import type { DocumentModel, Side } from "./engine/model";
+import { type OcrPageResult, ocrScannedPages, supportsVision } from "./engine/ocr";
 import { SemanticAnalyzer } from "./engine/semantic";
 import {
   type StoredChain,
@@ -36,8 +37,17 @@ export const MAX_FILE_BYTES = 80 * 1024 * 1024;
 
 export class IngestError extends Error {}
 
+export interface IngestOptions {
+  /** Reports OCR progress, which is the slow part when a document is scanned. */
+  onOcr?: (done: number, total: number, pageNumber: number) => void;
+}
+
 /** Read, hash and extract a file, then keep both the original and the model locally. */
-export async function ingestFile(file: File, side: Side = "A"): Promise<StoredDocument> {
+export async function ingestFile(
+  file: File,
+  side: Side = "A",
+  options: IngestOptions = {},
+): Promise<StoredDocument> {
   if (!isSupported(file.name)) {
     throw new IngestError(
       `${file.name} is not a supported format. Upload a PDF, DOCX or plain text file.`,
@@ -58,11 +68,36 @@ export async function ingestFile(file: File, side: Side = "A"): Promise<StoredDo
       `Could not read ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+  // Scanned pages have no text layer. With OCR enabled the pages are rendered and sent
+  // to the provider for transcription; without it they are reported, not silently empty.
+  let ocrResults: OcrPageResult[] = [];
+  const llm = await loadLlmSettings();
+  const scanned = model.pages.filter(
+    (p) => p.status === "scanned_document" || p.status === "unreadable_page",
+  ).length;
+
+  if (scanned > 0 && llm.ocrEnabled && llm.apiKey) {
+    const ocrSettings = { ...llm, model: llm.ocrModel || llm.model };
+    if (supportsVision(ocrSettings)) {
+      const outcome = await ocrScannedPages(model, file, ocrSettings, side, options.onOcr);
+      model = outcome.doc;
+      ocrResults = outcome.results;
+    } else {
+      model.warnings.push(
+        `${ocrSettings.model} does not accept images, so ${scanned} scanned page` +
+          `${scanned === 1 ? "" : "s"} could not be read. Choose a vision-capable model in Settings.`,
+      );
+    }
+  }
+
   if (model.blocks.length === 0) {
     throw new IngestError(
-      `No text could be read from ${file.name}. If it is a scan, it needs OCR first.`,
+      scanned > 0 && !llm.ocrEnabled
+        ? `${file.name} appears to be a scan with no text layer. Enable OCR in Settings to read it.`
+        : `No text could be read from ${file.name}.`,
     );
   }
+  void ocrResults;
 
   const stored: StoredDocument = {
     id: newId("doc"),

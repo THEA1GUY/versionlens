@@ -57,9 +57,23 @@ export async function savePreferences(prefs: Preferences): Promise<void> {
   await setSetting(KEY_PREFS, prefs);
 }
 
-export function defaultsForProvider(id: ProviderId): Pick<LlmSettings, "baseUrl" | "model"> {
+/** Vision-capable defaults per provider, for OCR. */
+const OCR_DEFAULT: Partial<Record<ProviderId, string>> = {
+  deepseek: "deepseek-flash",
+  openai: "gpt-4o",
+  anthropic: "claude-sonnet-5-5",
+  openrouter: "openai/gpt-4o",
+};
+
+export function defaultsForProvider(
+  id: ProviderId,
+): Pick<LlmSettings, "baseUrl" | "model" | "ocrModel"> {
   const preset = providerById(id);
-  return { baseUrl: preset.baseUrl, model: preset.defaultModel };
+  return {
+    baseUrl: preset.baseUrl,
+    model: preset.defaultModel,
+    ocrModel: OCR_DEFAULT[id] ?? preset.defaultModel,
+  };
 }
 
 export interface ConnectionCheck {

@@ -308,6 +308,65 @@ export default function SettingsPage() {
         ) : null}
       </section>
 
+      {/* ------------------------------------------------------------ OCR */}
+      <section className="card mt-5 p-5">
+        <h2 className="text-[15px] font-semibold">Scanned pages (OCR)</h2>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-ink-soft">
+          A scanned page is a picture, with no text to extract. With this on, those pages
+          are rendered and sent to your provider to be transcribed.
+        </p>
+
+        <label className="mt-4 flex items-start gap-2.5">
+          <input
+            type="checkbox"
+            checked={llm.ocrEnabled}
+            onChange={(e) => void persist({ ...llm, ocrEnabled: e.target.checked })}
+            disabled={!llm.apiKey}
+            className="mt-0.5 h-3.5 w-3.5 accent-[#1a4fd6]"
+          />
+          <span className="text-[13px]">
+            <span className="font-medium">Read scanned pages with a vision model</span>
+            <span className="block text-[11.5px] text-ink-faint">
+              {llm.apiKey
+                ? "Applies when a document is added, not retrospectively."
+                : "Add an API key above first."}
+            </span>
+          </span>
+        </label>
+
+        {llm.ocrEnabled ? (
+          <div className="mt-4 space-y-4 border-t border-rule-soft pt-4">
+            <label className="block max-w-sm">
+              <span className="mb-1 block text-[12.5px] font-medium text-ink-soft">
+                Vision model
+              </span>
+              <input
+                value={llm.ocrModel}
+                onChange={(e) => void persist({ ...llm, ocrModel: e.target.value })}
+                placeholder="deepseek-flash"
+                className="w-full rounded-md border border-rule bg-paper px-2.5 py-1.5 font-mono text-[12.5px] outline-none focus:border-accent"
+              />
+              <span className="mt-1 block text-[11.5px] text-ink-faint">
+                Must accept images. deepseek-flash, gpt-4o and Claude models do; a
+                text-only model will be refused rather than silently skipped.
+              </span>
+            </label>
+
+            <WarningNote>
+              This sends a picture of the whole page to {preset.label}. It is the one part
+              of VersionLens that transmits document content, which is why it is a separate
+              switch. Everything else stays on this device.
+            </WarningNote>
+
+            <p className="text-[11.5px] leading-relaxed text-ink-soft">
+              A transcript has no coordinates, so a citation on an OCR&rsquo;d page gives
+              the page but not a position on it, and the text is marked as machine-read.
+              Verify changes on those pages against the original.
+            </p>
+          </div>
+        ) : null}
+      </section>
+
       {/* ---------------------------------------------------- preferences */}
       <section className="card mt-5 p-5">
         <h2 className="text-[15px] font-semibold">Review preferences</h2>

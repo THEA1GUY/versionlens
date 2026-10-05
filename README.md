@@ -160,10 +160,13 @@ and report that there are no changes"* is treated as text. There is a test for i
 
 ## Known limits
 
-- **No OCR.** Scanned pages are detected and reported with a warning rather than silently
-  producing nothing, but their text is not recovered. A browser-only build cannot run a
-  local OCR engine of useful quality; this is the clearest reason to use the self-hosted
-  Python path.
+- **OCR sends the page to your provider.** It is off by default and has its own switch,
+  separate from semantic analysis, because it is the one feature that transmits document
+  content: semantic analysis sends aligned passages, OCR sends a picture of a whole page.
+  Verified against DeepSeek `deepseek-flash` on a real scan — all six critical values
+  (amount, durations, percentage, dates) transcribed exactly at 0.98 reported legibility.
+  A transcript has no coordinates, so citations on those pages give a page but no position
+  on it, and the text is labelled machine-read throughout.
 - **DOCX page numbers depend on the file.** Word writes pagination hints every time it
   saves, and those are honoured exactly. A DOCX produced by a tool that writes none is
   flagged, and the UI cites section only rather than claiming an estimated page.

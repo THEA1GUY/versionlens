@@ -1,0 +1,18 @@
+# Only the web app is deployed. Paths are anchored with a leading slash: an unanchored
+# "engine/" also matches web/lib/engine/, which is the app's own comparison engine.
+/.env
+/.env.*
+/storage/
+/engine/
+/api/
+/tests/
+/eval/
+/fixtures/
+/cli.py
+/requirements.txt
+/*.db
+/.pytest_cache/
+**/__pycache__/
+web/node_modules/
+web/.next/
+web/out/

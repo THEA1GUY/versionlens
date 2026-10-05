@@ -112,6 +112,16 @@ export interface LlmSettings {
   maxPassages: number;
   /** Let the model arbitrate ambiguous section pairings. */
   arbitrateAlignment: boolean;
+  /**
+   * Send scanned pages to the provider as images to recover their text.
+   *
+   * Separate from `enabled` on purpose: semantic analysis sends aligned passages, OCR
+   * sends a picture of a whole page. That is a bigger disclosure and deserves its own
+   * decision.
+   */
+  ocrEnabled: boolean;
+  /** Vision-capable model for OCR; may differ from the analysis model. */
+  ocrModel: string;
 }
 
 export const DEFAULT_LLM_SETTINGS: LlmSettings = {
@@ -123,6 +133,8 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   batchSize: 8,
   maxPassages: 80,
   arbitrateAlignment: true,
+  ocrEnabled: false,
+  ocrModel: "deepseek-flash",
 };
 
 export function resolveEndpoint(settings: LlmSettings): {

@@ -23,3 +23,5 @@ Thumbs.db
 # Static export output
 web/out/
 web/tsconfig.tsbuildinfo
+
+.vercel

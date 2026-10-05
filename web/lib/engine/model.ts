@@ -46,6 +46,10 @@ export interface Block {
   /** table_row blocks carry their cells so table diffing is structural, not textual. */
   cells: string[] | null;
   rowKey: string | null;
+  /** True when this text was transcribed from an image rather than read from the file. */
+  ocr?: boolean;
+  /** How legible the page was, when this block came from OCR. */
+  ocrConfidence?: number;
 }
 
 export interface Page {

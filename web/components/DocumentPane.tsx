@@ -174,6 +174,17 @@ export function DocumentPane({
                       />
                     </p>
                   )}
+                  {block.ocr ? (
+                    <div
+                      className="mt-0.5 text-[10px] text-attention"
+                      title="Transcribed from a page image by a model, not read from the file"
+                    >
+                      machine-read
+                      {typeof block.ocrConfidence === "number"
+                        ? ` · ${Math.round(block.ocrConfidence * 100)}% legible`
+                        : ""}
+                    </div>
+                  ) : null}
                   {isTarget && sectionName ? (
                     <div className="mt-0.5 text-[10.5px] text-accent">{sectionName}</div>
                   ) : null}
