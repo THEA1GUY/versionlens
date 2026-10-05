@@ -2,6 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 
+/* One superfamily, three semantic registers: sans is the tool's voice, mono marks values
+   to compare character by character, serif marks text quoted from a document. */
+const FONTS =
+  "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&" +
+  "family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Serif:ital,wght@0,400;1,400&display=swap";
+
 export const metadata: Metadata = {
   title: "VersionLens — see exactly what changed",
   description:
@@ -18,6 +24,11 @@ const NAV = [
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link rel="stylesheet" href={FONTS} />
+      </head>
       <body>
         <a
           href="#main"
@@ -30,7 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="mx-auto flex h-14 max-w-[1680px] items-center gap-6 px-4 sm:px-6">
               <Link href="/" className="flex items-center gap-2.5">
                 <Mark />
-                <span className="serif-title text-[17px] font-semibold">VersionLens</span>
+                <span className="text-lg font-medium">VersionLens</span>
               </Link>
               <nav aria-label="Main" className="hidden items-center gap-1 sm:flex">
                 {NAV.map((item) => (
