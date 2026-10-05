@@ -25,8 +25,11 @@ Human-reviewed for final judgment.
   accuracy across 17 labelled changes. **This is a controlled pair.** It proves the
   pipeline, not the product. Real labelled pairs under `eval/dataset/` are the next thing
   that would actually move the quality numbers.
-- Semantic layer is implemented but unexercised against a live model — no API key was
-  configured during the build. The deterministic path is what has been verified.
+- Semantic layer is live and verified against DeepSeek (`deepseek-chat`). On the demo
+  pair it corroborates existing findings and lifts category accuracy 94.1% -> 100%.
+  Credentials live in a gitignored `.env`; `.env.example` documents the shape.
+- The deterministic path still stands alone: every test runs with `use_semantic=False`,
+  so the suite never needs network or credits.
 
 ## Before changing the engine
 
@@ -70,6 +73,13 @@ training/analytics false pairing got shipped the first time.
   obligations fall through, or they lose their citations.
 - **One change, one alert.** Blocks inside a wholly added/removed section are suppressed —
   the section change carries them. Three alerts for one removed clause is the failure mode.
+  The semantic layer breaks this the same way: when it flags a meaning change on a passage
+  structured extraction already explained, it must record itself on that change (detector +
+  note) rather than append a second one. Turning the LLM on raised the demo from 24 to 25
+  changes until this was fixed.
+- **Config is read per-instance, not at import.** `SemanticAnalyzer` reads env in
+  `__init__`; module-level constants were evaluated before `.env` loaded, so the key was
+  invisible no matter what the file said.
 - **Tailwind v4 pins must match exactly.** `tailwindcss`, `@tailwindcss/postcss` and the
   native `@tailwindcss/oxide` resolving to different versions fails with
   `Missing field 'negated' on ScannerOptions.sources`.

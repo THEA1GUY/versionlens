@@ -168,12 +168,21 @@ class ChangeBuilder:
         cosmetic = is_cosmetic(a.text, b.text)
         meaning = bool(sem and sem.meaning_changed)
 
-        if not residual and not meaning:
+        if not residual:
             if out:
+                # Structured extraction already explains every changed fragment here.
+                # A semantic meaning flag corroborates those findings; it records itself
+                # on them rather than raising a second alert for the same edit (TRD §27).
+                # The structured change keeps its own type and exact delta, which are
+                # more precise than the model's prose.
+                if meaning and sem and sem.summary:
+                    for change in out:
+                        change.notes.append(f"Semantic analysis: {sem.summary}")
                 return out
-            if cosmetic:
-                return [self._cosmetic(al, ops, align_conf)]
-            return out
+            if not meaning:
+                if cosmetic:
+                    return [self._cosmetic(al, ops, align_conf)]
+                return out
 
         if cosmetic and not meaning:
             return out + [self._cosmetic(al, ops, align_conf)]

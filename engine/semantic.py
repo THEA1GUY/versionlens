@@ -20,10 +20,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from .changes import Category
+from .env import load_env
 
-DEFAULT_MODEL = os.environ.get("VERSIONLENS_LLM_MODEL", "gpt-4o-mini")
-DEFAULT_BASE_URL = os.environ.get("VERSIONLENS_LLM_BASE_URL") or None
-BATCH_SIZE = int(os.environ.get("VERSIONLENS_LLM_BATCH", "8"))
+FALLBACK_MODEL = "gpt-4o-mini"
 MAX_PASSAGE_CHARS = 1400
 
 SYSTEM_PROMPT = """You compare two versions of a business document passage by passage.
@@ -66,14 +65,20 @@ class SemanticAnalyzer:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = DEFAULT_MODEL,
-        base_url: str | None = DEFAULT_BASE_URL,
+        model: str | None = None,
+        base_url: str | None = None,
     ) -> None:
-        self.model = model
-        self.api_key = api_key or os.environ.get("VERSIONLENS_LLM_API_KEY") or os.environ.get(
-            "OPENAI_API_KEY"
+        # Read configuration here, not at import time: a .env loaded by the API's
+        # startup would otherwise arrive too late to be seen by module constants.
+        load_env()
+        self.api_key = (
+            api_key
+            or os.environ.get("VERSIONLENS_LLM_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
         )
-        self.base_url = base_url
+        self.model = model or os.environ.get("VERSIONLENS_LLM_MODEL") or FALLBACK_MODEL
+        self.base_url = base_url or os.environ.get("VERSIONLENS_LLM_BASE_URL") or None
+        self.batch_size = int(os.environ.get("VERSIONLENS_LLM_BATCH", "8"))
         self._client = None
         self.last_error: str | None = None
         self.calls = 0
@@ -111,8 +116,8 @@ class SemanticAnalyzer:
             return {}
 
         results: dict[str, SemanticFinding] = {}
-        for start in range(0, len(pairs), BATCH_SIZE):
-            batch = pairs[start : start + BATCH_SIZE]
+        for start in range(0, len(pairs), self.batch_size):
+            batch = pairs[start : start + self.batch_size]
             allowed = {p["id"] for p in batch}
             try:
                 payload = self._call(client, batch)

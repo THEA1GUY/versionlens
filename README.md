@@ -58,7 +58,8 @@ python cli.py a.pdf b.pdf --json out.json --all --no-semantic
 ### Semantic analysis (optional)
 
 Without a key the engine still runs; meaning-change detection falls back to the
-deterministic signals and the UI says so. Any OpenAI-compatible endpoint works:
+deterministic signals and the UI says so. Any OpenAI-compatible endpoint works. Copy
+`.env.example` to `.env` (gitignored) or export directly:
 
 ```bash
 export VERSIONLENS_LLM_API_KEY=sk-...
