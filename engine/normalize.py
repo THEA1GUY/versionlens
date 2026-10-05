@@ -73,5 +73,5 @@ def strip_repeated_runners(blocks: list) -> list:
     # Re-index so block ids stay contiguous.
     for i, b in enumerate(kept):
         b.block_index = i
-        b.id = f"{b.side}-p{b.page}-b{i}"
+        b.id = f"p{b.page}-b{i}"
     return kept

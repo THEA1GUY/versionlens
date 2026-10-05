@@ -12,7 +12,7 @@ def segment(doc: Document) -> Document:
     order = 0
 
     preamble = Section(
-        id=f"{doc.side}-s0",
+        id="s0",
         side=doc.side,
         section_number=None,
         heading="(preamble)",
@@ -37,7 +37,7 @@ def segment(doc: Document) -> Document:
             parent = stack[-1] if stack else None
 
             sec = Section(
-                id=f"{doc.side}-s{order}",
+                id=f"s{order}",
                 side=doc.side,
                 section_number=number,
                 heading=heading,

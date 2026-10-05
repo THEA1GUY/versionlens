@@ -393,4 +393,8 @@ def _guess_block_type(text: str) -> BlockType:
 
 
 def _bid(side: Side, page: int, index: int) -> str:
-    return f"{side}-p{page}-b{index}"
+    """Side-neutral by design: a block id identifies a position inside one document, and
+    which document is carried separately (Block.side, Citation.document_version). That
+    lets a stored extraction and a citation produced during a comparison agree on ids."""
+    del side
+    return f"p{page}-b{index}"

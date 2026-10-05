@@ -100,8 +100,11 @@ class ChangeBuilder:
 
         # A wholly added or removed section is reported once, by the section layer. Its
         # individual blocks must not also be listed, or one removed clause becomes three
-        # alerts (TRD §27).
-        suppressed = _blocks_in_whole_sections(section_alignments, self.doc_a, self.doc_b)
+        # alerts (TRD §27). Kept per side: block ids identify a position within one
+        # document, so "p2-b5" exists in both.
+        suppressed_a, suppressed_b = _blocks_in_whole_sections(
+            section_alignments, self.doc_a, self.doc_b
+        )
 
         unpaired_a: dict[str, list[Block]] = {}
         unpaired_b: dict[str, list[Block]] = {}
@@ -109,8 +112,9 @@ class ChangeBuilder:
         for al in block_alignments:
             if al.status == "UNCHANGED":
                 continue
-            block = al.block_b or al.block_a
-            if block and block.id in suppressed:
+            if al.status == "ADDED" and al.block_b and al.block_b.id in suppressed_b:
+                continue
+            if al.status == "REMOVED" and al.block_a and al.block_a.id in suppressed_a:
                 continue
             if al.status == "MODIFIED":
                 changes.extend(self._modified(al, ents_a, ents_b, semantic))
@@ -607,14 +611,15 @@ def _section_pair_key(al: SectionAlignment) -> str:
 
 def _blocks_in_whole_sections(
     section_alignments: list[SectionAlignment], doc_a: Document, doc_b: Document
-) -> set[str]:
-    out: set[str] = set()
+) -> tuple[set[str], set[str]]:
+    side_a: set[str] = set()
+    side_b: set[str] = set()
     for al in section_alignments:
         if al.status == "ADDED" and al.section_b:
-            out.update(b.id for b in doc_b.blocks_of(al.section_b.id))
+            side_b.update(b.id for b in doc_b.blocks_of(al.section_b.id))
         elif al.status == "REMOVED" and al.section_a:
-            out.update(b.id for b in doc_a.blocks_of(al.section_a.id))
-    return out
+            side_a.update(b.id for b in doc_a.blocks_of(al.section_a.id))
+    return side_a, side_b
 
 
 def pair_id(al: BlockAlignment) -> str:
