@@ -3,19 +3,25 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DISCLAIMER } from "@/lib/engine/compare";
-import type { StoredComparison } from "@/lib/store/db";
-import { listComparisons } from "@/lib/workflow";
+import type { StoredChain, StoredComparison } from "@/lib/store/db";
+import { listChains, listComparisons } from "@/lib/workflow";
 import { ComparisonTable } from "@/components/ComparisonTable";
+import { ChainTable } from "@/components/ChainTable";
 import { Disclaimer, EmptyState, ErrorNote, LocalBadge, Spinner } from "@/components/ui";
 
 export default function DashboardPage() {
   const [rows, setRows] = useState<StoredComparison[] | null>(null);
+  const [chains, setChains] = useState<StoredChain[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    listComparisons()
-      .then((list) => active && setRows(list))
+    Promise.all([listComparisons(), listChains()])
+      .then(([list, chainList]) => {
+        if (!active) return;
+        setRows(list);
+        setChains(chainList);
+      })
       .catch((err: Error) => active && setError(err.message));
     return () => {
       active = false;
@@ -81,6 +87,13 @@ export default function DashboardPage() {
           <ComparisonTable rows={rows.slice(0, 10)} />
         )}
       </section>
+
+      {chains.length > 0 ? (
+        <section className="mt-8">
+          <h2 className="label-caps mb-3">Version chains</h2>
+          <ChainTable rows={chains.slice(0, 10)} />
+        </section>
+      ) : null}
 
       <footer className="mt-10 border-t border-rule pt-4">
         <Disclaimer text={DISCLAIMER} />
