@@ -9,6 +9,8 @@
 import type { Change, ReviewStatus, ReviewerNote } from "../engine/changes";
 import type { ComparisonResult } from "../engine/compare";
 import type { DocumentModel } from "../engine/model";
+import { isEmbedded } from "../embed";
+import { memoryDatabase } from "./memory-db";
 
 const DB_NAME = "versionlens";
 const DB_VERSION = 2;
@@ -59,41 +61,56 @@ export interface StoredChain {
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+/**
+ * Open local storage, falling back to an ephemeral store for the embedded demo.
+ *
+ * A cross-origin frame can have IndexedDB partitioned or blocked outright. The demo has
+ * to keep working there, so it drops to memory. The standalone app deliberately does not:
+ * silently failing to persist a contract review is worse than saying storage is blocked.
+ */
 export function openDb(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") {
+    if (isEmbedded()) return (dbPromise ??= Promise.resolve(memoryDatabase()));
     return Promise.reject(new Error("This browser has no IndexedDB, so nothing can be saved."));
   }
   if (!dbPromise) {
-    dbPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains(STORE_DOCS)) {
-          db.createObjectStore(STORE_DOCS, { keyPath: "id" });
-        }
-        // Original bytes kept separately so listing documents never loads them.
-        if (!db.objectStoreNames.contains(STORE_FILES)) {
-          db.createObjectStore(STORE_FILES);
-        }
-        if (!db.objectStoreNames.contains(STORE_COMPARISONS)) {
-          const store = db.createObjectStore(STORE_COMPARISONS, { keyPath: "id" });
-          store.createIndex("createdAt", "createdAt");
-        }
-        if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
-          db.createObjectStore(STORE_SETTINGS);
-        }
-        if (!db.objectStoreNames.contains(STORE_CHAINS)) {
-          const chains = db.createObjectStore(STORE_CHAINS, { keyPath: "id" });
-          chains.createIndex("createdAt", "createdAt");
-        }
-      };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error ?? new Error("Could not open local storage."));
-      request.onblocked = () =>
-        reject(new Error("Local storage is blocked by another open tab. Close it and retry."));
+    dbPromise = openIndexedDb().catch((err: Error) => {
+      if (isEmbedded()) return memoryDatabase();
+      throw err;
     });
   }
   return dbPromise;
+}
+
+function openIndexedDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORE_DOCS)) {
+        db.createObjectStore(STORE_DOCS, { keyPath: "id" });
+      }
+      // Original bytes kept separately so listing documents never loads them.
+      if (!db.objectStoreNames.contains(STORE_FILES)) {
+        db.createObjectStore(STORE_FILES);
+      }
+      if (!db.objectStoreNames.contains(STORE_COMPARISONS)) {
+        const store = db.createObjectStore(STORE_COMPARISONS, { keyPath: "id" });
+        store.createIndex("createdAt", "createdAt");
+      }
+      if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
+        db.createObjectStore(STORE_SETTINGS);
+      }
+      if (!db.objectStoreNames.contains(STORE_CHAINS)) {
+        const chains = db.createObjectStore(STORE_CHAINS, { keyPath: "id" });
+        chains.createIndex("createdAt", "createdAt");
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Could not open local storage."));
+    request.onblocked = () =>
+      reject(new Error("Local storage is blocked by another open tab. Close it and retry."));
+  });
 }
 
 /**

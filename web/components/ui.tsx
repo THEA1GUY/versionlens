@@ -214,3 +214,20 @@ export function LocalBadge() {
     </span>
   );
 }
+
+/**
+ * The embedded demo's counterpart to `LocalBadge`.
+ *
+ * Inside a frame, storage may have fallen back to memory, so claiming data is kept on
+ * this device would be untrue. This says what is actually guaranteed: nothing persists.
+ */
+export function EphemeralBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded border border-rule bg-canvas px-1.5 py-[2px] text-[10.5px] font-medium text-ink-soft"
+      title="Demonstration only. Nothing you do here is saved, and no document leaves this browser."
+    >
+      <span aria-hidden="true">●</span> Nothing saved
+    </span>
+  );
+}
