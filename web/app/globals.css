@@ -16,7 +16,10 @@
   --color-sunk: oklch(0.967 0.004 262);
   --color-ink: oklch(0.24 0.014 262);
   --color-muted: oklch(0.47 0.012 262);
-  --color-faint: oklch(0.6 0.01 262);
+  /* Labels are 11px uppercase, which is not "large text", so this carries the full
+     4.5:1 requirement rather than the 3:1 one. Tuned against the *sunk* surface (table
+     headers, toolbars), which is where labels mostly sit and is the tightest case. */
+  --color-faint: oklch(0.532 0.013 262);
   --color-line: oklch(0.906 0.005 262);
   --color-line-soft: oklch(0.945 0.004 262);
 
@@ -85,6 +88,13 @@
    type immediately, and the renaming can happen file by file without a broken build in
    between. Delete each alias once nothing references it. */
 @theme {
+  /* Solid high-contrast control. `ink` on `bg` flips correctly in both themes: a
+     near-black button with near-white text in light, the reverse in dark. Writing
+     bg-ink + text-white instead produced a white-on-white button in dark mode. */
+  --color-action: var(--color-ink);
+  --color-on-action: var(--color-bg);
+  --color-action-hover: var(--color-accent);
+
   --color-paper: var(--color-surface);
   --color-canvas: var(--color-bg);
   --color-ink-soft: var(--color-muted);

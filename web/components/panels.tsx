@@ -349,7 +349,7 @@ function Pill({
       aria-pressed={active}
       className={`rounded-full border px-2.5 py-[3px] text-[11.5px] transition-colors ${
         active
-          ? "border-ink bg-ink text-white"
+          ? "border-action bg-action text-on-action"
           : "border-rule bg-paper text-ink-soft hover:border-ink-faint hover:text-ink"
       }`}
     >

@@ -60,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </span>
                 <Link
                   href="/new"
-                  className="rounded-md bg-ink px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-black"
+                  className="rounded-md bg-action px-3 py-1.5 text-[13px] font-medium text-on-action transition-colors duration-[120ms] hover:bg-action-hover"
                 >
                   New comparison
                 </Link>

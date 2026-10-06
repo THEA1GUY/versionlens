@@ -89,7 +89,7 @@ export function DocumentPane({
                   onClick={() => setMode(m)}
                   aria-pressed={mode === m}
                   className={`px-2 py-[3px] text-[11px] transition-colors ${
-                    mode === m ? "bg-ink text-white" : "bg-paper text-ink-soft hover:text-ink"
+                    mode === m ? "bg-action text-on-action" : "bg-paper text-ink-soft hover:text-ink"
                   }`}
                 >
                   {m === "text" ? "Text" : "Page"}

@@ -171,7 +171,7 @@ export function ChangeCard({
                 disabled={saving !== null}
                 className={`rounded border px-2 py-1 text-[11.5px] transition-colors disabled:opacity-50 ${
                   active
-                    ? "border-ink bg-ink text-white"
+                    ? "border-action bg-action text-on-action"
                     : "border-rule text-ink-soft hover:border-ink-faint hover:text-ink"
                 }`}
               >

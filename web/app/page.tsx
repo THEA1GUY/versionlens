@@ -46,7 +46,7 @@ export default function DashboardPage() {
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <Link
             href="/new"
-            className="rounded-md bg-ink px-4 py-2 text-[13.5px] font-medium text-white transition-colors hover:bg-black"
+            className="rounded-md bg-action px-4 py-2 text-[13.5px] font-medium text-on-action transition-colors duration-[120ms] hover:bg-action-hover"
           >
             Compare two documents
           </Link>

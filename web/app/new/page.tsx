@@ -272,7 +272,7 @@ export default function NewComparisonPage() {
           type="button"
           onClick={() => void submit()}
           disabled={!ready}
-          className="rounded-md bg-ink px-4 py-2 text-[13.5px] font-medium text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:bg-ink-faint"
+          className="rounded-md bg-action px-4 py-2 text-[13.5px] font-medium text-on-action transition-colors duration-[120ms] hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-ink-faint disabled:text-surface"
         >
           {isChain ? `Compare ${slots.length} versions` : "Compare documents"}
         </button>
