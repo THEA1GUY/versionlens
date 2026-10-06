@@ -16,6 +16,7 @@ import {
   type ProviderId,
   providerById,
 } from "../engine/providers";
+import { isEmbedded } from "../embed";
 import { getSetting, setSetting } from "./db";
 
 const KEY_LLM = "llm";
@@ -37,6 +38,13 @@ export const DEFAULT_PREFERENCES: Preferences = {
 };
 
 export async function loadLlmSettings(): Promise<LlmSettings> {
+  // The embedded demo makes no paid model calls, and this is where that is enforced
+  // rather than merely hidden. Both paid paths in `workflow.ts` gate on these flags:
+  // OCR on `ocrEnabled && apiKey`, semantic analysis on `enabled`. Returning them off
+  // means no UI mistake elsewhere can start spending someone's credits.
+  if (isEmbedded()) {
+    return { ...DEFAULT_LLM_SETTINGS, enabled: false, ocrEnabled: false, apiKey: "" };
+  }
   const stored = await getSetting<Partial<LlmSettings>>(KEY_LLM).catch(() => undefined);
   const merged = { ...DEFAULT_LLM_SETTINGS, ...(stored ?? {}) };
   // A stale provider id from an older build must not break the screen.

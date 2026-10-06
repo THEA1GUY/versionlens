@@ -214,3 +214,23 @@ export function LocalBadge() {
     </span>
   );
 }
+
+/**
+ * The embedded demo's counterpart to `LocalBadge`.
+ *
+ * Deliberately says less than either alternative would. Inside a frame the demo may be
+ * running on the ephemeral store, or on an IndexedDB that the browser has partitioned
+ * per top-level site — so "on this device" and "nothing is saved" are each untrue in one
+ * of those cases. What holds in both is that this is sample data and none of it leaves
+ * the browser.
+ */
+export function EphemeralBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded border border-rule bg-canvas px-1.5 py-[2px] text-[10.5px] font-medium text-ink-soft"
+      title="A fictional sample, compared in this browser. Nothing is uploaded, and anything you change here stays in this frame."
+    >
+      <span aria-hidden="true">●</span> Sample data
+    </span>
+  );
+}
